@@ -11,7 +11,7 @@ const UI := preload("res://scripts/ui.gd")
 const SHIFT_SECONDS := 300.0           # 8:00am to 5:00pm in five real minutes
 const START_HOUR := 8.0
 const END_HOUR := 17.0
-const SLA := {1: 40.0, 2: 60.0, 3: 90.0, 4: 120.0}
+const SLA := {1: 90.0, 2: 120.0, 3: 180.0, 4: 240.0}  # real seconds; a shift is 300s
 const PAY := {1: 300, 2: 200, 3: 120, 4: 80}
 const REP_WRONG := 8.0
 const REP_BREACH := 12.0
@@ -104,7 +104,7 @@ func _process(delta: float) -> void:
 	_next_spawn -= delta
 	if _next_spawn <= 0.0:
 		var progress := elapsed / SHIFT_SECONDS
-		_next_spawn = lerpf(13.0, 6.0, progress) / spawn_scale
+		_next_spawn = lerpf(18.0, 10.0, progress) / spawn_scale
 		if queue.size() < MAX_QUEUE:
 			_spawn()
 
