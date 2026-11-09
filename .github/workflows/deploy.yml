@@ -58,7 +58,7 @@ jobs:
       - name: Inject analytics
         env:
           UMAMI_WEBSITE_ID: ${{ vars.UMAMI_WEBSITE_ID }}
-          GA_MEASUREMENT_ID: ${{ vars.GA_MEASUREMENT_ID }}
+          GA_MEASUREMENT_ID: ${{ vars.GA_MEASUREMENT_ID || 'G-LG9NEH229Y' }}
         run: python3 tools/inject_analytics.py export_presets.cfg
 
       - name: Stamp build
@@ -120,7 +120,7 @@ jobs:
       - name: Archive this day + update /days index
         env:
           UMAMI_WEBSITE_ID: ${{ vars.UMAMI_WEBSITE_ID }}
-          GA_MEASUREMENT_ID: ${{ vars.GA_MEASUREMENT_ID }}
+          GA_MEASUREMENT_ID: ${{ vars.GA_MEASUREMENT_ID || 'G-LG9NEH229Y' }}
           ZONE: ${{ vars.BUNNY_STORAGE_ZONE || secrets.BUNNY_STORAGE_ZONE }}
           HOST: ${{ vars.BUNNY_STORAGE_HOST || secrets.BUNNY_STORAGE_HOST }}
           KEY: ${{ secrets.BUNNY_STORAGE_PASSWORD }}

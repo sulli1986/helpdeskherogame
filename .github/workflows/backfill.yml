@@ -61,7 +61,7 @@ jobs:
       GAME_API_URL: ${{ vars.GAME_API_URL || secrets.GAME_API_URL }}
       GAME_URL: ${{ vars.GAME_URL }}
       UMAMI_WEBSITE_ID: ${{ vars.UMAMI_WEBSITE_ID }}
-      GA_MEASUREMENT_ID: ${{ vars.GA_MEASUREMENT_ID }}
+      GA_MEASUREMENT_ID: ${{ vars.GA_MEASUREMENT_ID || 'G-LG9NEH229Y' }}
     steps:
       - uses: actions/checkout@v4
         with: { fetch-depth: 0 }
@@ -135,7 +135,7 @@ jobs:
       HOST: ${{ vars.BUNNY_STORAGE_HOST || secrets.BUNNY_STORAGE_HOST }}
       KEY: ${{ secrets.BUNNY_STORAGE_PASSWORD }}
       UMAMI_WEBSITE_ID: ${{ vars.UMAMI_WEBSITE_ID }}
-      GA_MEASUREMENT_ID: ${{ vars.GA_MEASUREMENT_ID }}
+      GA_MEASUREMENT_ID: ${{ vars.GA_MEASUREMENT_ID || 'G-LG9NEH229Y' }}
     steps:
       - uses: actions/checkout@v4
 
