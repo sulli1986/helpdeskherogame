@@ -86,6 +86,10 @@ func _ready() -> void:
 	api.logged_in.connect(_on_logged_in)
 	api.leaderboard_received.connect(title.show_leaderboard)
 
+	if not _demo:  # the demo sets its own fixed portrait scale
+		get_window().size_changed.connect(_fit_ui_scale)
+		_fit_ui_scale()
+
 	if _demo:
 		var d := preload("res://scripts/demo.gd").new()
 		add_child(d)
@@ -93,6 +97,14 @@ func _ready() -> void:
 		return
 	api.request_leaderboard()
 	api.try_resume()
+
+
+## Phones in portrait get a phone-sized canvas; otherwise the 1280x720 desktop layout is
+## shrunk to a third of the screen and too small to read or tap.
+func _fit_ui_scale() -> void:
+	var w := get_window()
+	var portrait := w.size.y > w.size.x
+	w.content_scale_size = Vector2i(540, 960) if portrait else Vector2i(1280, 720)
 
 
 func _process(delta: float) -> void:
