@@ -20,7 +20,7 @@ FONT="$(fc-match -f '%{file}' 'DejaVu Sans:bold' 2>/dev/null || true)"
 # One drawtext per line: newer ffmpeg renders "\n" inside a textfile as a missing-glyph box.
 VF="$(python3 tools/clip_filter.py "$OUT" "$FONT")"
 ffmpeg -y -loglevel error -i "$OUT/raw.avi" -vf "$VF" \
-  -c:v libx264 -preset veryfast -crf 21 -pix_fmt yuv420p -movflags +faststart -an "$OUT/clip.mp4"
+  -c:v libx264 -preset veryfast -crf 21 -pix_fmt yuv420p -movflags +faststart -c:a aac -b:a 128k "$OUT/clip.mp4"
 
 rm -f "$OUT/raw.avi"
 ls -la "$OUT"

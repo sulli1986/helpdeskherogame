@@ -87,7 +87,7 @@ func _ready() -> void:
 	_status = UI.wrap(UI.label(box, "", 14, Color(1, 0.7, 0.6)))
 	_status.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 
-	var how := UI.wrap(UI.label(box, "How to play: open a ticket, read the evidence, pick the fix (keys 1-4). Right answers pay more the faster you are. Wrong calls and SLA breaches cost reputation.", 13, UI.MUTED))
+	var how := UI.wrap(UI.label(box, "How to play: open a ticket, read the evidence, pick the fix (keys 1-4). Right answers pay more the faster you are. Wrong calls and SLA breaches cost reputation. M toggles sound.", 13, UI.MUTED))
 	how.custom_minimum_size = Vector2(340, 0)
 
 	# Leaderboard

@@ -19,6 +19,7 @@ const REP_RIGHT := 2.0
 const MAX_QUEUE := 8
 
 var gen: RefCounted
+var sfx: Node              # scripts/sfx.gd, set by main before _ready
 var running := false
 var elapsed := 0.0
 var cash := 0
@@ -58,6 +59,9 @@ var _cash_label: Label
 var _rep_bar: ProgressBar
 var _toast: Label
 var _toast_t := 0.0
+var _sound_btn: Button
+var _brand: Label
+var _top_row: HBoxContainer
 
 
 func _ready() -> void:
@@ -114,6 +118,9 @@ func _process(delta: float) -> void:
 		var bar: ProgressBar = t.row.get_meta("bar")
 		bar.value = clampf(left / SLA[t.priority] * 100.0, 0.0, 100.0)
 		bar.modulate = Color(1, 0.3, 0.3) if left < 10.0 else Color.WHITE
+		if left < 10.0 and left > 0.0 and not t.get("warned", false):
+			t.warned = true
+			_sfx("warn")
 		(t.row.get_meta("time") as Label).text = "%ds" % maxi(0, ceili(left))
 		if left <= 0.0:
 			_breach(t)
@@ -144,8 +151,10 @@ func answer(i: int) -> void:
 		rep = minf(100.0, rep + REP_RIGHT)
 		cash_earned.emit(pay)
 		_show_toast("+$%d" % pay, UI.GOOD)
+		_sfx("right")
 	else:
 		rep -= REP_WRONG
+		_sfx("wrong")
 		_show_toast("Escalated: -%d rep" % REP_WRONG, UI.BAD)
 	_mark_options(i)
 	_show_feedback(ok, pay)
@@ -198,6 +207,7 @@ func _spawn() -> void:
 	queue.append(t)
 	_queue_list.add_child(t.row)
 	_queue_head.text = "Queue (%d)" % queue.size()
+	_sfx("new")
 	if current.is_empty() and not _answered:
 		_show_ticket(t)
 
@@ -206,6 +216,7 @@ func _breach(t: Dictionary) -> void:
 	breaches += 1
 	rep -= REP_BREACH
 	_show_toast("SLA breached: %s" % t.client, UI.BAD)
+	_sfx("wrong")
 	if t.id == current.get("id", -1) and not _answered:
 		_answered = true
 		_mark_options(-1)
@@ -304,6 +315,16 @@ func _scroll_to_feedback() -> void:
 	_dscroll.scroll_vertical = int(_dscroll.get_v_scroll_bar().max_value)
 
 
+func _sfx(id: String) -> void:
+	if sfx:
+		sfx.play(id)
+
+
+func _update_sound_btn(muted: bool) -> void:
+	_sound_btn.text = "Sound: off" if muted else "Sound: on"
+	_sound_btn.tooltip_text = "Toggle sound (M)"
+
+
 func _show_toast(text: String, colour: Color) -> void:
 	_toast.text = text
 	_toast.add_theme_color_override("font_color", colour)
@@ -366,9 +387,10 @@ func _build() -> void:
 	bar.add_theme_stylebox_override("panel", UI.box(UI.PANEL, 8, 12))
 	root.add_child(bar)
 	var hb := HBoxContainer.new()
+	_top_row = hb
 	hb.add_theme_constant_override("separation", 18)
 	bar.add_child(hb)
-	UI.label(hb, "HELPDESK HERO", 18, UI.ACCENT)
+	_brand = UI.label(hb, "HELPDESK HERO", 18, UI.ACCENT)
 	_clock = UI.label(hb, "8:00am", 18, UI.TEXT)
 	var spacer := Control.new()
 	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -383,6 +405,16 @@ func _build() -> void:
 	_rep_bar.add_theme_stylebox_override("background", UI.box(Color(1, 1, 1, 0.08), 4, 0))
 	_rep_bar.add_theme_stylebox_override("fill", UI.box(Color.WHITE, 4, 0))
 	hb.add_child(_rep_bar)
+	_sound_btn = Button.new()
+	_sound_btn.focus_mode = Control.FOCUS_NONE
+	_sound_btn.add_theme_font_size_override("font_size", 13)
+	hb.add_child(_sound_btn)
+	if sfx:
+		_sound_btn.pressed.connect(sfx.toggle_mute)
+		sfx.mute_changed.connect(_update_sound_btn)
+		_update_sound_btn(sfx.muted)
+	else:
+		_sound_btn.visible = false
 
 	_layout = BoxContainer.new()
 	_layout.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -469,6 +501,8 @@ func _relayout() -> void:
 	var vp := get_viewport_rect().size
 	var portrait := vp.y > vp.x  # window shape, not this control's (padding can skew it)
 	_layout.vertical = portrait
+	_brand.visible = vp.x >= 640  # phones: make room in the top bar for clock, cash, rep and sound
+	_top_row.add_theme_constant_override("separation", 18 if vp.x >= 640 else 10)
 	_toast.position.y = 58.0 if portrait else 6.0  # below the top bar in portrait, in its middle otherwise
 	if portrait:
 		_queue_panel.custom_minimum_size = Vector2(0, vp.y * 0.17)

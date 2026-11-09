@@ -13,6 +13,7 @@ var api: Node
 var title: Control
 var desk: Control
 var news: PanelContainer
+var sfx: Node
 var summary: PanelContainer
 var _summary_text: Label
 var _news_corner: MarginContainer
@@ -62,8 +63,13 @@ func _ready() -> void:
 		_logged_in = false
 		title.show_logged_out())
 
+	sfx = preload("res://scripts/sfx.gd").new()
+	sfx.name = "Sfx"
+	add_child(sfx)
+
 	desk = Desk.new()
 	desk.name = "Desk"
+	desk.sfx = sfx
 	desk.visible = false
 	pad.add_child(desk)
 	desk.shift_ended.connect(_on_shift_ended)

@@ -1,5 +1,10 @@
 # Changelog
 
+## Day 2 — 2026-11-10
+- The helpdesk has sound: a chime for every new ticket, a jingle for a fix, a buzz for a wrong call and a beep when a ticket's SLA is nearly up
+- Press M or the Sound button in the top bar to mute; it remembers your choice
+- On phones the top bar no longer runs off the edge of the screen
+
 ## Day 1 — 2026-11-09
 - Welcome to the helpdesk: run a shift at an MSP and work tickets before their SLA runs out
 - Six kinds of ticket: phishing checks, account lockouts, share access, printers, internet outages and M365 licences
