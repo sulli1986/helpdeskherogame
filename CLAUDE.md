@@ -15,7 +15,7 @@ Godot 4.5 web game: an MSP helpdesk sim, hosted on bunny.net. Every day an agent
 - `.github/workflows/deploy.yml` — export + upload on push to `main`; archives the build to `/days/day-N/`, rebuilds `/days/index.html`, renders + posts the clip
 - `.github/workflows/backfill.yml` — manual: rebuild past days from git history, re-render/repost clips
 - `tools/test_tickets.gd` — ticket sanity test (structure, answer range, variety, no region-specific terms)
-- `tools/` — `bunny.sh` (storage helpers), `make_clip.sh`, `clip_text.py`, `clip_filter.py`, `post_clip.sh`, `days_index.py`, `day_commits.py`, `inject_demo.py`, `inject_umami.py`
+- `tools/` — `bunny.sh` (storage helpers), `make_clip.sh`, `clip_text.py`, `clip_filter.py`, `post_clip.sh`, `days_index.py`, `day_commits.py`, `inject_demo.py`, `inject_analytics.py`
 
 ## Daily change procedure
 1. Read `CHANGELOG.md` and `ROADMAP.md`. Pick the top unchecked roadmap item, or a better small idea if one is clearly more valuable.

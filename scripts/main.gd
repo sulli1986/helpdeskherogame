@@ -197,10 +197,12 @@ func _notification(what: int) -> void:
 		save_game()
 
 
-## Umami custom event (no-op outside the browser or if the script is blocked).
+## Analytics custom event to Umami and GA4 (no-op outside the browser or if a script is blocked).
 func track(event: String, data: Dictionary = {}) -> void:
 	if OS.has_feature("web"):
-		JavaScriptBridge.eval("window.umami && umami.track(%s, %s)" % [JSON.stringify(event), JSON.stringify(data)], true)
+		var e := JSON.stringify(event)
+		var d := JSON.stringify(data)
+		JavaScriptBridge.eval("window.umami && umami.track(%s, %s); window.gtag && gtag('event', %s, %s)" % [e, d, e, d], true)
 
 
 func _build_summary() -> void:

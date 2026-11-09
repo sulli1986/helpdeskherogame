@@ -26,7 +26,10 @@ for n, date, body in entries:
   </article>""")
 
 uid = os.environ.get("UMAMI_WEBSITE_ID", "").strip()
-umami = f'<script defer src="https://cloud.umami.is/script.js" data-website-id="{html.escape(uid)}"></script>' if uid else ""
+import sys as _sys
+_sys.path.insert(0, str(Path(__file__).parent))
+from inject_analytics import tags as _analytics_tags
+umami = _analytics_tags()  # Umami and/or GA4, from env
 page = f"""<!DOCTYPE html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Every day so far · Helpdesk Hero</title>

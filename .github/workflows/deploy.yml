@@ -58,7 +58,8 @@ jobs:
       - name: Inject analytics
         env:
           UMAMI_WEBSITE_ID: ${{ vars.UMAMI_WEBSITE_ID }}
-        run: python3 tools/inject_umami.py export_presets.cfg
+          GA_MEASUREMENT_ID: ${{ vars.GA_MEASUREMENT_ID }}
+        run: python3 tools/inject_analytics.py export_presets.cfg
 
       - name: Stamp build
         run: echo "$(git rev-parse --short HEAD) · $(TZ=Australia/Perth date '+%Y-%m-%d %H:%M') AWST" > build.txt
@@ -119,6 +120,7 @@ jobs:
       - name: Archive this day + update /days index
         env:
           UMAMI_WEBSITE_ID: ${{ vars.UMAMI_WEBSITE_ID }}
+          GA_MEASUREMENT_ID: ${{ vars.GA_MEASUREMENT_ID }}
           ZONE: ${{ vars.BUNNY_STORAGE_ZONE || secrets.BUNNY_STORAGE_ZONE }}
           HOST: ${{ vars.BUNNY_STORAGE_HOST || secrets.BUNNY_STORAGE_HOST }}
           KEY: ${{ secrets.BUNNY_STORAGE_PASSWORD }}

@@ -22,6 +22,7 @@ Click a ticket (or Tab / ↑↓), read the evidence, pick the fix with 1-4, Ente
 | `GAME_API_URL` | variable | Edge script URL, e.g. `https://helpdeskhero-api.b-cdn.net` |
 | `GAME_URL` | variable | Public game URL (used in clip captions and posts) |
 | `UMAMI_WEBSITE_ID` | variable | Optional: Umami website ID for analytics |
+| `GA_MEASUREMENT_ID` | variable | Optional: Google Analytics 4 measurement ID (`G-…`, from Admin → Data streams) |
 | `UPLOADPOST_API_KEY` | secret | Optional: Upload-Post key for daily clip posting |
 | `UPLOADPOST_USER` | variable | Upload-Post profile name |
 | `UPLOADPOST_PLATFORMS` | variable | Default `youtube x facebook` |

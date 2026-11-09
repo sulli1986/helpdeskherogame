@@ -61,6 +61,7 @@ jobs:
       GAME_API_URL: ${{ vars.GAME_API_URL || secrets.GAME_API_URL }}
       GAME_URL: ${{ vars.GAME_URL }}
       UMAMI_WEBSITE_ID: ${{ vars.UMAMI_WEBSITE_ID }}
+      GA_MEASUREMENT_ID: ${{ vars.GA_MEASUREMENT_ID }}
     steps:
       - uses: actions/checkout@v4
         with: { fetch-depth: 0 }
@@ -80,7 +81,7 @@ jobs:
           rm -rf old/tools && cp -r tools old/tools
           python3 tools/inject_demo.py old .
           # Analytics on archived builds too.
-          python3 tools/inject_umami.py old/export_presets.cfg
+          python3 tools/inject_analytics.py old/export_presets.cfg
           u="$(printf '%s' "$GAME_API_URL" | tr -d '[:space:]')"; u="${u%/}"
           case "$u" in http://*) u="https://${u#http://}";; https://*) ;; ?*) u="https://$u";; esac
           sed -i "s#__GAME_API__#${u}#" old/export_presets.cfg
@@ -134,6 +135,7 @@ jobs:
       HOST: ${{ vars.BUNNY_STORAGE_HOST || secrets.BUNNY_STORAGE_HOST }}
       KEY: ${{ secrets.BUNNY_STORAGE_PASSWORD }}
       UMAMI_WEBSITE_ID: ${{ vars.UMAMI_WEBSITE_ID }}
+      GA_MEASUREMENT_ID: ${{ vars.GA_MEASUREMENT_ID }}
     steps:
       - uses: actions/checkout@v4
 
