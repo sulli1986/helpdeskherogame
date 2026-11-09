@@ -14,6 +14,7 @@ Godot 4.5 web game: an MSP helpdesk sim, hosted on bunny.net. Every day an agent
 - `api/edge-script.ts` — Bunny Edge Script (Deno) + Bunny Database
 - `.github/workflows/deploy.yml` — export + upload on push to `main`; archives the build to `/days/day-N/`, rebuilds `/days/index.html`, renders + posts the clip
 - `.github/workflows/backfill.yml` — manual: rebuild past days from git history, re-render/repost clips
+- `tools/test_tickets.gd` — ticket sanity test (structure, answer range, variety, no region-specific terms)
 - `tools/` — `bunny.sh` (storage helpers), `make_clip.sh`, `clip_text.py`, `clip_filter.py`, `post_clip.sh`, `days_index.py`, `day_commits.py`, `inject_demo.py`, `inject_umami.py`
 
 ## Daily change procedure
@@ -24,6 +25,8 @@ Godot 4.5 web game: an MSP helpdesk sim, hosted on bunny.net. Every day an agent
 5. **Ticket content must be technically correct.** Players include real IT/MSP people. Keep it global and generic: no country- or city-specific businesses, ISPs or slang. Fictional, generic client businesses only (e.g. "Clearwater Dental"); never real company names as clients (vendors like Microsoft/Xero in headers are fine).
 6. New persisted fields: add to `career` in main.gd (it's saved whole), and whitelist in `cleanSave()` in `api/edge-script.ts`. Never change existing columns destructively.
 7. Validate: `godot --headless --import --quit`, then a short run `godot --headless --quit-after 600` and `godot --headless --quit-after 600 -- --demo`, then `godot --headless --export-release "Web" build/web/index.html`. None may print `SCRIPT ERROR` / `Parse Error`.
+   Also run `godot --headless -s tools/test_tickets.gd`; it must print `0 failure(s)` (CI runs it too and blocks the deploy on failure). When you add a ticket type, it's covered automatically via `KINDS`.
+7b. **Fact-check before committing.** Have an independent reviewer (a fresh subagent that didn't write the change) read the diff and check: every ticket's right answer genuinely follows from its evidence in every random variant; the wrong options are actually wrong; explanations are accurate for current Microsoft 365 / Windows / networking practice; numbers and game logic (SLA, pay, rep, save fields) add up; nothing country-specific. Fix what it finds. If you can't get it to a clean result, don't push: revert and report.
 8. Add an entry at the top of `CHANGELOG.md` as `## Day N — YYYY-MM-DD` (Australia/Perth date) followed by 1–3 `- ` bullets written for players (what's new and how to try it, no code talk). This file is shown in-game by the "What's new" panel, and the heading becomes the build's version label. Tick the roadmap item.
 9. If the change is visible, make sure the demo shows it (e.g. force the new ticket type early with `gen.make("kind")`, or add a beat to TIMELINE in `scripts/demo.gd`). Keep END_AT under 59s. The clip's caption comes from your first CHANGELOG bullet, so lead with the hook (text before a colon is the on-screen line).
 10. Commit to `main` with message `Day N: <change>` and push. CI deploys.

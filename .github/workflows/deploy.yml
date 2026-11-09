@@ -63,6 +63,11 @@ jobs:
       - name: Stamp build
         run: echo "$(git rev-parse --short HEAD) · $(TZ=Australia/Perth date '+%Y-%m-%d %H:%M') AWST" > build.txt
 
+      - name: Ticket sanity test
+        run: |
+          ~/godot/godot --headless --import --quit || true
+          ~/godot/godot --headless -s tools/test_tickets.gd
+
       - name: Export
         run: |
           set -euo pipefail
