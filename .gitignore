@@ -3,3 +3,4 @@ build/
 *.import
 export_credentials.cfg
 build.txt
+__pycache__/
