@@ -1,0 +1,220 @@
+name: Build & deploy to Bunny
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy
+  cancel-in-progress: true
+
+env:
+  GODOT_VERSION: 4.5.1
+
+jobs:
+  game:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache Godot
+        id: cache
+        uses: actions/cache@v4
+        with:
+          path: ~/godot
+          key: godot-${{ env.GODOT_VERSION }}-web
+
+      - name: Install Godot + web templates
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          mkdir -p ~/godot && cd ~/godot
+          base=https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable
+          dl() { curl -fSL --retry 5 --retry-all-errors --retry-delay 5 --connect-timeout 30 -o "$1" "$2"; }
+          dl g.zip "$base/Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip"
+          unzip -q g.zip
+          rm g.zip
+          mv Godot_v*_linux.x86_64 godot
+          chmod +x godot
+          dl t.tpz "$base/Godot_v${GODOT_VERSION}-stable_export_templates.tpz"
+          unzip -q t.tpz 'templates/web_nothreads_*' 'templates/version.txt'
+          rm t.tpz
+          ls -la ~/godot ~/godot/templates
+
+      - name: Link templates
+        run: |
+          dest=~/.local/share/godot/export_templates/${GODOT_VERSION}.stable
+          mkdir -p "$dest" && cp ~/godot/templates/* "$dest/"
+
+      - name: Inject API URL
+        env:
+          GAME_API_URL: ${{ vars.GAME_API_URL || secrets.GAME_API_URL }}
+        run: |
+          u="$(printf '%s' "$GAME_API_URL" | tr -d '[:space:]')"; u="${u%/}"
+          case "$u" in http://*) u="https://${u#http://}";; https://*) ;; ?*) u="https://$u";; esac
+          sed -i "s#__GAME_API__#${u}#" export_presets.cfg
+
+      - name: Inject analytics
+        env:
+          UMAMI_WEBSITE_ID: ${{ vars.UMAMI_WEBSITE_ID }}
+        run: python3 tools/inject_umami.py export_presets.cfg
+
+      - name: Stamp build
+        run: echo "$(git rev-parse --short HEAD) · $(TZ=Australia/Perth date '+%Y-%m-%d %H:%M') AWST" > build.txt
+
+      - name: Export
+        run: |
+          set -euo pipefail
+          test -x ~/godot/godot || { echo "Godot binary missing"; exit 1; }
+          mkdir -p build/web
+          ~/godot/godot --headless --import --quit || true
+          ~/godot/godot --headless --export-release "Web" build/web/index.html
+          ls -la build/web
+
+      - name: Upload to Bunny Storage
+        env:
+          ZONE: ${{ vars.BUNNY_STORAGE_ZONE || secrets.BUNNY_STORAGE_ZONE }}
+          HOST: ${{ vars.BUNNY_STORAGE_HOST || secrets.BUNNY_STORAGE_HOST }}
+          KEY: ${{ secrets.BUNNY_STORAGE_PASSWORD }}
+        run: |
+          for n in ZONE KEY; do [ -n "${!n}" ] || { echo "::error::Missing BUNNY_STORAGE_${n/KEY/PASSWORD} (set it under Settings > Secrets and variables > Actions)"; exit 1; }; done
+          # Accept "syd.storage.bunnycdn.com", "https://syd.storage.bunnycdn.com/", etc.
+          trim() { printf '%s' "$1" | tr -d '[:space:]'; }
+          KEY="$(trim "$KEY")"; ZONE="$(trim "$ZONE")"; HOST="$(trim "$HOST")"
+          HOST="${HOST#*://}"; HOST="${HOST%%/*}"; HOST="${HOST:-storage.bunnycdn.com}"
+          ZONE="${ZONE#/}"; ZONE="${ZONE%/}"
+
+          # Diagnostics without revealing values
+          case "$HOST" in
+            storage.bunnycdn.com|*.storage.bunnycdn.com) echo "Host format OK (ends with storage.bunnycdn.com)";;
+            *) echo "::error::BUNNY_STORAGE_HOST must be a storage endpoint like syd.storage.bunnycdn.com, not the pull zone / b-cdn.net hostname"; exit 1;;
+          esac
+          echo "Zone name length: ${#ZONE}  Password length: ${#KEY} (storage zone passwords are ~41 chars incl. dashes; account API keys ~72)"
+          code=$(curl -s -o /dev/null -w '%{http_code}' "https://${HOST}/${ZONE}/" -H "AccessKey: ${KEY}")
+          echo "List zone root: HTTP $code"
+          if [ "$code" = "401" ]; then
+            echo "::error::Bunny rejected the credentials. Check BUNNY_STORAGE_PASSWORD is the storage zone's password (Storage > zone > FTP & API Access), the zone name matches exactly, and the host matches the zone's main region."
+            exit 1
+          fi
+          cd build/web
+          for f in *; do
+            case "$f" in
+              *.wasm) ct=application/wasm ;;
+              *.js)   ct=application/javascript ;;
+              *.html) ct=text/html ;;
+              *.png)  ct=image/png ;;
+              *)      ct=application/octet-stream ;;
+            esac
+            echo "PUT $f"
+            curl -sSf -X PUT "https://${HOST}/${ZONE}/${f}" \
+              -H "AccessKey: ${KEY}" -H "Content-Type: ${ct}" --data-binary "@${f}" > /dev/null
+          done
+
+      - name: Archive this day + update /days index
+        env:
+          UMAMI_WEBSITE_ID: ${{ vars.UMAMI_WEBSITE_ID }}
+          ZONE: ${{ vars.BUNNY_STORAGE_ZONE || secrets.BUNNY_STORAGE_ZONE }}
+          HOST: ${{ vars.BUNNY_STORAGE_HOST || secrets.BUNNY_STORAGE_HOST }}
+          KEY: ${{ secrets.BUNNY_STORAGE_PASSWORD }}
+        run: |
+          . tools/bunny.sh; bunny_init
+          N=$(grep -m1 -oP '^## Day \K\d+' CHANGELOG.md)
+          bunny_put_dir build/web "days/day-${N}"
+          python3 tools/days_index.py build/days/index.html
+          bunny_put build/days/index.html days/index.html
+
+      - name: Purge pull zone
+        env:
+          API_KEY: ${{ secrets.BUNNY_API_KEY }}
+          PZ: ${{ vars.BUNNY_PULLZONE_ID || secrets.BUNNY_PULLZONE_ID }}
+        run: |
+          PZ="$(printf '%s' "$PZ" | tr -d '[:space:]')"
+          case "$PZ" in ''|*[!0-9]*) echo "::warning::BUNNY_PULLZONE_ID must be the numeric ID (Pull Zones > zone > the number in the URL). Skipping purge."; exit 0;; esac
+          code=$(curl -s -o /tmp/purge.txt -w '%{http_code}' -X POST "https://api.bunny.net/pullzone/${PZ}/purgeCache" -H "AccessKey: ${API_KEY}")
+          echo "Purge: HTTP $code"; cat /tmp/purge.txt; echo
+          [ "$code" -lt 300 ] || echo "::warning::Purge failed (check BUNNY_API_KEY is the account API key, not a storage password). Files are uploaded; CDN may serve stale copies until cache expires."
+
+  api:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Upload + publish edge script
+        env:
+          API_KEY: ${{ secrets.BUNNY_API_KEY }}
+          SID: ${{ vars.BUNNY_SCRIPT_ID || secrets.BUNNY_SCRIPT_ID }}
+        run: |
+          if [ -z "${SID}" ]; then echo "BUNNY_SCRIPT_ID not set, skipping API deploy"; exit 0; fi
+          jq -Rs '{Code: .}' api/edge-script.ts > payload.json
+          curl -sSf -X POST "https://api.bunny.net/compute/script/${SID}/code" \
+            -H "AccessKey: ${API_KEY}" -H "Content-Type: application/json" --data @payload.json
+          curl -sSf -X POST "https://api.bunny.net/compute/script/${SID}/publish" \
+            -H "AccessKey: ${API_KEY}" -H "Content-Type: application/json" --data '{}'
+
+  clip:
+    needs: game
+    runs-on: ubuntu-latest
+    continue-on-error: true   # a failed clip never blocks a deploy
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Restore Godot
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/godot
+          key: godot-${{ env.GODOT_VERSION }}-web
+
+      - name: Install render deps
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq xvfb libgl1-mesa-dri libglu1-mesa ffmpeg fonts-dejavu-core fontconfig > /dev/null
+
+      - name: Render clip
+        env:
+          GAME_URL: ${{ vars.GAME_URL }}
+        run: |
+          set -euo pipefail
+          test -x ~/godot/godot
+          ~/godot/godot --headless --import --quit || true
+          GODOT=~/godot/godot tools/make_clip.sh build/clip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: daily-clip
+          path: build/clip/
+          retention-days: 30
+
+      - name: Upload clip to Bunny
+        env:
+          ZONE: ${{ vars.BUNNY_STORAGE_ZONE || secrets.BUNNY_STORAGE_ZONE }}
+          HOST: ${{ vars.BUNNY_STORAGE_HOST || secrets.BUNNY_STORAGE_HOST }}
+          KEY: ${{ secrets.BUNNY_STORAGE_PASSWORD }}
+          GAME_URL: ${{ vars.GAME_URL }}
+        run: |
+          trim() { printf '%s' "$1" | tr -d '[:space:]'; }
+          KEY="$(trim "$KEY")"; ZONE="$(trim "$ZONE")"; HOST="$(trim "$HOST")"
+          HOST="${HOST#*://}"; HOST="${HOST%%/*}"; HOST="${HOST:-storage.bunnycdn.com}"
+          N=$(cat build/clip/day.txt)
+          put() { curl -sSf -X PUT "https://${HOST}/${ZONE}/clips/$2" -H "AccessKey: ${KEY}" -H "Content-Type: $3" --data-binary "@$1" > /dev/null; }
+          put build/clip/clip.mp4    "day-${N}.mp4" video/mp4
+          put build/clip/clip.mp4    "latest.mp4"   video/mp4
+          put build/clip/caption.txt "day-${N}.txt" "text/plain; charset=utf-8"
+          put build/clip/caption.txt "latest.txt"   "text/plain; charset=utf-8"
+          {
+            echo "### 🎬 Day ${N} clip"
+            echo "- Video: ${GAME_URL%/}/clips/day-${N}.mp4"
+            echo "- Caption: ${GAME_URL%/}/clips/day-${N}.txt"
+            echo; echo '```'; cat build/clip/caption.txt; echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Post to socials via Upload-Post (once per day)
+        env:
+          UPLOADPOST_API_KEY: ${{ secrets.UPLOADPOST_API_KEY }}
+          UPLOADPOST_USER: ${{ vars.UPLOADPOST_USER || secrets.UPLOADPOST_USER }}
+          PLATFORMS: ${{ vars.UPLOADPOST_PLATFORMS || 'youtube x facebook' }}
+          UPLOADPOST_FACEBOOK_PAGE_ID: ${{ vars.UPLOADPOST_FACEBOOK_PAGE_ID || secrets.UPLOADPOST_FACEBOOK_PAGE_ID }}
+          ZONE: ${{ vars.BUNNY_STORAGE_ZONE || secrets.BUNNY_STORAGE_ZONE }}
+          HOST: ${{ vars.BUNNY_STORAGE_HOST || secrets.BUNNY_STORAGE_HOST }}
+          KEY: ${{ secrets.BUNNY_STORAGE_PASSWORD }}
+        run: tools/post_clip.sh build/clip

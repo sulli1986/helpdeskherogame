@@ -1,0 +1,37 @@
+name: API smoke test
+
+on:
+  workflow_dispatch:
+  workflow_run:
+    workflows: ["Build & deploy to Bunny"]
+    types: [completed]
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Register, login, save, me, leaderboard
+        env:
+          API: ${{ vars.GAME_API_URL || secrets.GAME_API_URL }}
+        run: |
+          set -u
+          API="$(printf '%s' "$API" | tr -d '[:space:]')"; API="${API%/}"
+          case "$API" in http://*) API="https://${API#http://}";; https://*) ;; ?*) API="https://$API";; esac
+          U="smoke_$(date +%s)"; P="smokepass123"
+          call() { echo "== $1 $2"; curl -s -o /tmp/b -w 'HTTP %{http_code} in %{time_total}s\n' -X "$1" "$API$2" -H 'Content-Type: application/json' "${@:3}"; head -c 400 /tmp/b; echo; }
+          call GET /api/health
+          echo "== CORS preflight"
+          curl -s -o /dev/null -D - -X OPTIONS "$API/api/register" -H 'Origin: https://example.com' -H 'Access-Control-Request-Method: POST' -H 'Access-Control-Request-Headers: content-type' | grep -iE '^HTTP|access-control' || true
+          call POST /api/register -d "{\"username\":\"$U\",\"password\":\"$P\"}"
+          TOKEN=$(grep -o '"token":"[0-9a-f]*"' /tmp/b | cut -d'"' -f4 || true)
+          call POST /api/login -d "{\"username\":\"$U\",\"password\":\"$P\"}"
+          [ -n "${TOKEN:-}" ] || { echo "::error::Register returned no token"; exit 1; }
+          call POST /api/save -H "Authorization: Bearer $TOKEN" -d '{"coins":5,"playtime":10,"pos":[21,1,21]}'
+          grep -q '"written":true' /tmp/b || { echo "::error::Header save not written"; exit 1; }
+          echo "== beacon-style save (text/plain, token in body)"
+          curl -s -o /tmp/b -w 'HTTP %{http_code}\n' -X POST "$API/api/save" -H 'Content-Type: text/plain' \
+            -d "{\"token\":\"$TOKEN\",\"coins\":7,\"playtime\":11,\"seq\":2}"; cat /tmp/b; echo
+          grep -q '"written":true' /tmp/b || { echo "::error::Beacon save not written"; exit 1; }
+          # Reads come from a replica that can lag; poll for eventual consistency (informational).
+          for i in $(seq 1 15); do sleep 2; curl -s "$API/api/me" -H "Authorization: Bearer $TOKEN" | grep -q '"coins":7' && { echo "Replica caught up after $((i*2))s"; break; }; done
+          call GET /api/leaderboard

@@ -1,0 +1,172 @@
+name: Backfill days (archive builds + clips)
+
+# Rebuilds past days from git history into /days/day-N/, re-renders each day's clip,
+# and optionally reposts the clips (oldest first). Run manually from the Actions tab.
+on:
+  workflow_dispatch:
+    inputs:
+      days:
+        description: 'Days to rebuild: "all" or a space-separated list like "1 2"'
+        default: all
+      clips:
+        description: Re-render clips
+        type: boolean
+        default: true
+      repost:
+        description: Repost clips to socials (creates new posts, oldest day first)
+        type: boolean
+        default: false
+      platforms:
+        description: 'Platforms for the repost (blank = UPLOADPOST_PLATFORMS), e.g. "x facebook"'
+        default: 
+
+env:
+  GODOT_VERSION: 4.5.1
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.p.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - id: p
+        env:
+          WANT: ${{ inputs.days }}
+        run: |
+          python3 - <<'EOF' >> "$GITHUB_OUTPUT"
+          import json, os, subprocess
+          rows = [l.split() for l in subprocess.run(["python3", "tools/day_commits.py"], capture_output=True, text=True, check=True).stdout.splitlines()]
+          want = os.environ.get("WANT", "all").strip()
+          if want != "all":
+              keep = set(want.replace(",", " ").split())
+              rows = [r for r in rows if r[0] in keep]
+          print("matrix=" + json.dumps({"include": [{"day": int(d), "sha": s} for d, s in rows]}))
+          EOF
+          cat "$GITHUB_OUTPUT"
+
+  build:
+    needs: plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix: ${{ fromJson(needs.plan.outputs.matrix) }}
+    env:
+      ZONE: ${{ vars.BUNNY_STORAGE_ZONE || secrets.BUNNY_STORAGE_ZONE }}
+      HOST: ${{ vars.BUNNY_STORAGE_HOST || secrets.BUNNY_STORAGE_HOST }}
+      KEY: ${{ secrets.BUNNY_STORAGE_PASSWORD }}
+      GAME_API_URL: ${{ vars.GAME_API_URL || secrets.GAME_API_URL }}
+      GAME_URL: ${{ vars.GAME_URL }}
+      UMAMI_WEBSITE_ID: ${{ vars.UMAMI_WEBSITE_ID }}
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+
+      - uses: actions/cache@v4
+        with:
+          path: ~/godot
+          key: godot-${{ env.GODOT_VERSION }}-web
+
+      - name: Install Godot
+        run: tools/install_godot.sh
+
+      - name: Check out Day ${{ matrix.day }} (${{ matrix.sha }})
+        run: |
+          git worktree add -f old "${{ matrix.sha }}"
+          # Current tooling + demo autopilot so old days can render clips the same way.
+          rm -rf old/tools && cp -r tools old/tools
+          python3 tools/inject_demo.py old .
+          # Analytics on archived builds too.
+          python3 tools/inject_umami.py old/export_presets.cfg
+          u="$(printf '%s' "$GAME_API_URL" | tr -d '[:space:]')"; u="${u%/}"
+          case "$u" in http://*) u="https://${u#http://}";; https://*) ;; ?*) u="https://$u";; esac
+          sed -i "s#__GAME_API__#${u}#" old/export_presets.cfg
+          echo "${{ matrix.sha }} · Day ${{ matrix.day }} archive" | cut -c1-7,41- > old/build.txt
+
+      - name: Export Day ${{ matrix.day }}
+        working-directory: old
+        run: |
+          mkdir -p build/web
+          ~/godot/godot --headless --import --quit || true
+          ~/godot/godot --headless --export-release "Web" build/web/index.html
+          ls -la build/web
+
+      - name: Upload to /days/day-${{ matrix.day }}/
+        run: |
+          . tools/bunny.sh; bunny_init
+          bunny_put_dir old/build/web "days/day-${{ matrix.day }}"
+
+      - name: Install render deps
+        if: inputs.clips
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq xvfb libgl1-mesa-dri libglu1-mesa ffmpeg fonts-dejavu-core fontconfig > /dev/null
+
+      - name: Render clip
+        if: inputs.clips
+        working-directory: old
+        run: GODOT=~/godot/godot tools/make_clip.sh build/clip
+
+      - name: Upload clip
+        if: inputs.clips
+        run: |
+          . tools/bunny.sh; bunny_init
+          N=${{ matrix.day }}
+          bunny_put old/build/clip/clip.mp4 "clips/day-${N}.mp4"
+          bunny_put old/build/clip/caption.txt "clips/day-${N}.txt"
+
+      - uses: actions/upload-artifact@v4
+        if: inputs.clips
+        with:
+          name: clip-day-${{ matrix.day }}
+          path: old/build/clip/
+          retention-days: 14
+
+  finish:
+    needs: build
+    if: always()
+    runs-on: ubuntu-latest
+    env:
+      ZONE: ${{ vars.BUNNY_STORAGE_ZONE || secrets.BUNNY_STORAGE_ZONE }}
+      HOST: ${{ vars.BUNNY_STORAGE_HOST || secrets.BUNNY_STORAGE_HOST }}
+      KEY: ${{ secrets.BUNNY_STORAGE_PASSWORD }}
+      UMAMI_WEBSITE_ID: ${{ vars.UMAMI_WEBSITE_ID }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Update /days index
+        run: |
+          . tools/bunny.sh; bunny_init
+          python3 tools/days_index.py build/days/index.html
+          bunny_put build/days/index.html days/index.html
+
+      - uses: actions/download-artifact@v4
+        if: inputs.clips && inputs.repost
+        with:
+          pattern: clip-day-*
+          path: clips
+
+      - name: Repost clips, oldest first
+        if: inputs.clips && inputs.repost
+        env:
+          UPLOADPOST_API_KEY: ${{ secrets.UPLOADPOST_API_KEY }}
+          UPLOADPOST_USER: ${{ vars.UPLOADPOST_USER || secrets.UPLOADPOST_USER }}
+          PLATFORMS: ${{ inputs.platforms || vars.UPLOADPOST_PLATFORMS || 'youtube x facebook' }}
+          UPLOADPOST_FACEBOOK_PAGE_ID: ${{ vars.UPLOADPOST_FACEBOOK_PAGE_ID || secrets.UPLOADPOST_FACEBOOK_PAGE_ID }}
+        run: |
+          for d in $(ls -d clips/clip-day-* | sort -t- -k3 -n); do
+            tools/post_clip.sh "$d" --force || echo "::warning::Posting $d failed"
+            sleep 20
+          done
+
+      - name: Purge pull zone
+        env:
+          API_KEY: ${{ secrets.BUNNY_API_KEY }}
+          PZ: ${{ vars.BUNNY_PULLZONE_ID || secrets.BUNNY_PULLZONE_ID }}
+        run: |
+          PZ="$(printf '%s' "$PZ" | tr -d '[:space:]')"
+          case "$PZ" in ''|*[!0-9]*) echo "No numeric pull zone ID; skipping purge"; exit 0;; esac
+          curl -s -X POST "https://api.bunny.net/pullzone/${PZ}/purgeCache" -H "AccessKey: ${API_KEY}" -w 'Purge HTTP %{http_code}\n'
