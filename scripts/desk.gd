@@ -8,10 +8,10 @@ signal cash_earned(amount: int)
 const Tickets := preload("res://scripts/tickets.gd")
 const UI := preload("res://scripts/ui.gd")
 
-const SHIFT_SECONDS := 300.0           # 8:00am to 5:00pm in five real minutes
+const SHIFT_SECONDS := 420.0           # 8:00am to 5:00pm in seven real minutes
 const START_HOUR := 8.0
 const END_HOUR := 17.0
-const SLA := {1: 90.0, 2: 120.0, 3: 180.0, 4: 240.0}  # real seconds; a shift is 300s
+const SLA := {1: 120.0, 2: 180.0, 3: 240.0, 4: 300.0}  # real seconds
 const PAY := {1: 300, 2: 200, 3: 120, 4: 80}
 const REP_WRONG := 8.0
 const REP_BREACH := 12.0
