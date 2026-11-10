@@ -18,7 +18,7 @@ Godot 4.5 web game: an MSP helpdesk sim, hosted on bunny.net. Every day an agent
 - `tools/` — `bunny.sh` (storage helpers), `make_clip.sh`, `clip_text.py`, `clip_filter.py`, `post_clip.sh`, `days_index.py`, `day_commits.py`, `inject_demo.py`, `inject_analytics.py`
 
 ## Daily change procedure
-1. Read `CHANGELOG.md` and `ROADMAP.md`. Pick the top unchecked roadmap item, or a better small idea if one is clearly more valuable.
+1. Read `CHANGELOG.md` and `ROADMAP.md`. Pick the top unchecked roadmap item, or a better small idea if one is clearly more valuable. Follow the roadmap's balance rule: grow the game as a sim (new mechanics, interactive tools like the virtual terminal/admin console, multi-step fixes, improvements to existing systems), and add a new ticket type at most one day in three (check the last few CHANGELOG entries). Big features are split into steps across days; each step must be playable on its own.
 2. Make ONE focused change (one feature or one fix). Keep the diff small and readable.
 3. Everything stays code-built: Control nodes, StyleBoxFlat, procedural audio. No binary assets.
 4. Renderer is GL Compatibility, single-threaded web export. Don't add anything needing threads or SharedArrayBuffer.
