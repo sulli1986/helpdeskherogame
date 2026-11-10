@@ -29,6 +29,7 @@ var correct := 0
 var breaches := 0
 var spawn_scale := 1.0     # demo speeds up arrivals
 var clock_scale := 1.0     # demo runs the shift clock faster
+var first_kind := ""       # demo forces the first ticket's type
 var queue: Array = []      # open tickets (Dictionaries), each with "age" and "row"
 var current: Dictionary = {}
 var _answered := false
@@ -199,7 +200,8 @@ func _unhandled_input(event: InputEvent) -> void:
 
 # ------------------------------------------------------------------ queue
 func _spawn() -> void:
-	var t: Dictionary = gen.make()
+	var t: Dictionary = gen.make(first_kind)
+	first_kind = ""
 	t.id = _next_id
 	_next_id += 1
 	t.age = 0.0

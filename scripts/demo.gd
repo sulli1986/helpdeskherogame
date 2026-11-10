@@ -51,6 +51,7 @@ func _start_shift() -> void:
 	main.summary.visible = false
 	desk.spawn_scale = 2.4
 	desk.clock_scale = 9.0   # 8am to 5pm in ~47s, leaving time for the shift report
+	desk.first_kind = "mfa"  # Day 3: open on the new MFA fatigue ticket
 	desk.start(7)
 	_auto = true
 	_step_t = READ_TIME

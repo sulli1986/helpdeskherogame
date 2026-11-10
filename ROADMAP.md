@@ -5,7 +5,7 @@ Every day should add something new or noticeably improve something players alrea
 
 - [x] Day 1: ticket queue, SLA timers, 6 ticket types, scoring + reputation, shift report, login/save, leaderboard
 - [x] Day 2: Sound: procedural blips for new ticket, resolve, wrong call, SLA warning (code-built AudioStreamWAV), M to mute
-- [ ] New ticket type: MFA fatigue (user approving pushes they didn't start) → revoke sessions, reset, number matching
+- [x] Day 3: New ticket type: MFA fatigue (user approving pushes they didn't start) → revoke sessions, reset, number matching
 - [ ] Phone queue: a ringing call that must be picked up within 15s or it becomes a P2 voicemail ticket
 - [ ] Upgrades shop between shifts: spend career cash on RMM (+10s SLA), password self-service (fewer lockouts), documentation wiki (hint button)
 - [ ] New ticket type: backup failure (Veeam/job log) → pick the cause (repo full, VSS error, credentials expired)

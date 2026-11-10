@@ -6,7 +6,7 @@ extends RefCounted
 ## New ticket types: add a _make_<kind>() and list it in KINDS. Keep answers technically right;
 ## the players are often real IT people.
 
-const KINDS := ["phish", "lockout", "share", "printer", "network", "licence"]
+const KINDS := ["phish", "lockout", "share", "printer", "network", "licence", "mfa"]
 
 const CLIENTS := [
 	["Greenfield Wines", "greenfieldwines.com"],
@@ -234,6 +234,38 @@ func _make_licence(c: Dictionary) -> Dictionary:
 		"answer": 3 if shared else 0,
 		"explain": ("Shared mailboxes under 50 GB need no licence. Grant Full Access + Send As to the 3 users." if shared
 			else "Desktop apps plus Intune and Defender means Business Premium. Standard has no Intune; Basic has no desktop apps."),
+	}
+
+
+# ---------------------------------------------------------------- MFA fatigue
+func _make_mfa(c: Dictionary) -> Dictionary:
+	var got_in := rng.randf() < 0.5
+	var start_min := rng.randi_range(5, 20)
+	var tries := rng.randi_range(9, 24)
+	var ip := "203.0.113.%d" % rng.randi_range(2, 250)
+	var upn := "%s@%s" % [c.sam, c.domain]
+	var info := "Entra sign-ins:  %s\nFrom:            %s (hosting provider, never seen before)\nAttempts:        %d, 02:%02d-02:%02d, password correct each time\nMFA method:      Authenticator push (number matching)\n" % [upn, ip, tries, start_min, start_min + 18]
+	if got_in:
+		var rule: String = _pick(["invoice", "payment", "bank"])
+		info += "MFA result:      denied x%d, APPROVED 02:%02d\n\nAudit 02:%02d:     User registered security info (Authenticator)\nExchange 02:%02d:  Inbox rule moves mail containing \"%s\" to RSS Feeds\nCall notes:      a \"helpdesk\" caller read them a number to enter" % [tries - 1, start_min + 18, start_min + 21, start_min + 26, rule]
+	else:
+		info += "MFA result:      denied x%d (every prompt)\n\nAudit log:       no changes to security info or mailbox rules\nCall notes:      %s denied them all; nobody else contacted them" % [tries, c.first]
+	return {
+		"priority": 1,
+		"subject": "Authenticator prompts I didn't start",
+		"body": "%s: \"My phone kept buzzing with sign-in requests from about 2am. I wasn't logging in. What's going on?\"" % c.first,
+		"info_title": "Sign-in + audit logs",
+		"info": info,
+		"question": "What's happened, and what do you do?",
+		"options": [
+			"Password is known but MFA held: reset the password and revoke sessions",
+			"Attacker is in: block sign-in, revoke sessions, reset password, remove their MFA method and inbox rule",
+			"Tell them to approve one so the prompts stop, then keep an eye on it",
+			"Turn MFA off for this user until the prompts die down",
+		],
+		"answer": 1 if got_in else 0,
+		"explain": ("The 02:%02d approval let them in, then they added their own Authenticator and a rule to hide replies. Contain it: block, revoke, reset, remove both, then check what was sent. Never enter a number someone gives you." % (start_min + 18) if got_in
+			else "Each push came after a correct password, so it's compromised even though MFA held. Reset it and revoke sessions; Conditional Access or phishing-resistant MFA cuts this off."),
 	}
 
 
