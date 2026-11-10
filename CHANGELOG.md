@@ -1,7 +1,7 @@
 # Changelog
 
 ## Day 3 — 2026-11-11
-- New ticket: MFA fatigue. A user's phone is buzzing with sign-in requests they didn't start at 2am
+- MFA fatigue attack at 2am: a new ticket where a user's phone won't stop buzzing with sign-in requests they didn't start
 - Read the Entra sign-in and audit logs: did MFA hold, or did someone get in? Pick the right containment
 - Watch for the tell-tale signs of a takeover: a new Authenticator on the account and a sneaky inbox rule
 
