@@ -7,6 +7,7 @@ signal cash_earned(amount: int)
 
 const Tickets := preload("res://scripts/tickets.gd")
 const UI := preload("res://scripts/ui.gd")
+const Terminal := preload("res://scripts/terminal.gd")
 
 const SHIFT_SECONDS := 420.0           # 8:00am to 5:00pm in seven real minutes
 const START_HOUR := 8.0
@@ -50,6 +51,12 @@ var _meta: Label
 var _body: Label
 var _info_title: Label
 var _info: Label
+var _info_scroll: ScrollContainer  # grows to fit, except terminal tickets: fixed height, follows output
+var _term_row: HBoxContainer   # command prompt under the evidence box (network tickets)
+var _term_prompt: Label
+var _term_input: LineEdit
+var _term_hist: Array = []
+var _term_hist_i := 0
 var _question: Label
 var _opts: VBoxContainer
 var _feedback: PanelContainer
@@ -158,6 +165,9 @@ func answer(i: int) -> void:
 		_sfx("wrong")
 		_show_toast("Escalated: -%d rep" % REP_WRONG, UI.BAD)
 	_mark_options(i)
+	_term_input.release_focus()  # so Enter goes to the next ticket
+	_term_input.editable = false
+	_term_input.focus_mode = Control.FOCUS_NONE
 	_show_feedback(ok, pay)
 	_remove(current)
 
@@ -222,6 +232,9 @@ func _breach(t: Dictionary) -> void:
 	if t.id == current.get("id", -1) and not _answered:
 		_answered = true
 		_mark_options(-1)
+		_term_input.release_focus()
+		_term_input.editable = false
+		_term_input.focus_mode = Control.FOCUS_NONE
 		_feedback_label.text = "SLA breached. The client escalated to their account manager.\n\n%s\n\nEnter: next ticket" % t.explain
 		_feedback.add_theme_stylebox_override("panel", UI.box(UI.BAD.darkened(0.6), 8, 14))
 		_feedback.visible = true
@@ -278,6 +291,16 @@ func _show_ticket(t: Dictionary) -> void:
 	_body.text = t.body
 	_info_title.text = t.info_title
 	_info.text = t.info
+	_info_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO if t.has("term") else ScrollContainer.SCROLL_MODE_DISABLED
+	_info_scroll.custom_minimum_size.y = clampf(get_viewport_rect().size.y * 0.3, 160.0, 320.0) if t.has("term") else 0.0
+	_term_row.visible = t.has("term")
+	_term_input.text = ""
+	_term_input.editable = true
+	_term_input.focus_mode = Control.FOCUS_ALL
+	if t.has("term"):
+		_term_prompt.text = t.prompt
+	else:
+		_term_input.release_focus()
 	_question.text = t.question
 	for c in _opts.get_children():
 		c.queue_free()
@@ -290,6 +313,50 @@ func _show_ticket(t: Dictionary) -> void:
 		b.custom_minimum_size = Vector2(0, 40)
 		b.pressed.connect(answer.bind(i))
 		_opts.add_child(b)
+
+
+## Run a command in the open ticket's simulated command prompt and append the output.
+func run_command(line: String) -> void:
+	if current.is_empty() or not current.has("term") or not running or _answered:
+		return
+	line = line.strip_edges()
+	_term_input.text = ""
+	if line != "":
+		_term_hist.append(line)
+	_term_hist_i = _term_hist.size()
+	if line.to_lower() == "cls":
+		current.info = ""
+	else:
+		var out := Terminal.run(line, current.term)
+		current.info += "\n%s %s\n%s\n" % [current.prompt, line, out] if out != "" else "\n%s\n" % current.prompt
+		var lines: PackedStringArray = current.info.split("\n")
+		if lines.size() > 80:  # keep the box from growing forever
+			current.info = "\n".join(lines.slice(lines.size() - 80))
+	_info.text = current.info
+	_sfx("type")
+	await get_tree().process_frame
+	await get_tree().process_frame
+	_info_scroll.scroll_vertical = int(_info_scroll.get_v_scroll_bar().max_value)
+
+
+func _on_term_key(e: InputEvent) -> void:
+	# Up/Down recall earlier commands (and must not switch tickets while typing).
+	if not (e is InputEventKey) or not e.pressed:
+		return
+	var k: int = e.physical_keycode
+	if k == KEY_TAB:  # leave the prompt and switch ticket, as Tab does everywhere else
+		_term_input.release_focus()
+		_term_input.accept_event()
+		select_offset(1)
+	elif k == KEY_UP or k == KEY_DOWN:
+		if not _term_hist.is_empty():
+			_term_hist_i = clampi(_term_hist_i + (-1 if k == KEY_UP else 1), 0, _term_hist.size())
+			_term_input.text = _term_hist[_term_hist_i] if _term_hist_i < _term_hist.size() else ""
+			_term_input.caret_column = _term_input.text.length()
+		_term_input.accept_event()
+	elif k == KEY_ESCAPE:
+		_term_input.release_focus()
+		_term_input.accept_event()
 
 
 func _mark_options(chosen: int) -> void:
@@ -469,8 +536,26 @@ func _build() -> void:
 	var info_box := PanelContainer.new()
 	info_box.add_theme_stylebox_override("panel", UI.box(UI.CONSOLE, 6, 10))
 	_detail.add_child(info_box)
-	_info = UI.wrap(UI.label(info_box, "", 13, Color("b8f5c8")))
+	_info_scroll = ScrollContainer.new()
+	_info_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	info_box.add_child(_info_scroll)
+	_info = UI.wrap(UI.label(_info_scroll, "", 13, Color("b8f5c8")))
 	_info.add_theme_font_override("font", UI.mono())
+	_term_row = HBoxContainer.new()
+	_term_row.add_theme_constant_override("separation", 6)
+	_detail.add_child(_term_row)
+	_term_prompt = UI.label(_term_row, "C:\\>", 13, Color("b8f5c8"))
+	_term_prompt.add_theme_font_override("font", UI.mono())
+	_term_input = LineEdit.new()
+	_term_input.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_term_input.placeholder_text = "type a command, Enter to run (Esc to leave)"
+	_term_input.add_theme_font_override("font", UI.mono())
+	_term_input.add_theme_font_size_override("font_size", 13)
+	_term_input.add_theme_color_override("font_color", Color("b8f5c8"))
+	_term_input.context_menu_enabled = false
+	_term_input.text_submitted.connect(run_command)
+	_term_input.gui_input.connect(_on_term_key)
+	_term_row.add_child(_term_input)
 	_question = UI.label(_detail, "", 16, UI.ACCENT)
 	_opts = VBoxContainer.new()
 	_opts.add_theme_constant_override("separation", 6)

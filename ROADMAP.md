@@ -12,7 +12,7 @@ one day in three; the other days build things like the items in "Mechanics" belo
 - [x] Day 3: New ticket type: MFA fatigue (user approving pushes they didn't start) → revoke sessions, reset, number matching
 
 ## Mechanics (take these first)
-- [ ] Virtual PC terminal, step 1: on network tickets, the evidence starts hidden and the player types real commands (ipconfig, ping, nslookup, tracert) into a simulated command prompt to reveal it. Unknown commands get a realistic error
+- [x] Virtual PC terminal, step 1: on network tickets, the evidence starts hidden and the player types real commands (ipconfig, ping, nslookup, tracert) into a simulated command prompt to reveal it. Unknown commands get a realistic error
 - [ ] Multi-step tickets: diagnose, then fix, then verify (two or three questions on one ticket, pay for each step)
 - [ ] Admin console, step 1: a mock user-admin panel (account status, MFA methods, sessions, mailbox rules) where the player fixes lockout/MFA tickets by clicking the right actions in the right order, instead of picking one option
 - [ ] Requirements gathering: project/new-starter tickets where the client's request is vague; pick which questions to ask (limited budget of questions), then spec the solution from the answers

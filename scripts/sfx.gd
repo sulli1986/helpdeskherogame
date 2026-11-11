@@ -1,7 +1,7 @@
 extends Node
 ## Procedural sound effects: short blips synthesised into AudioStreamWAV buffers at startup
 ## (no audio files). WAV streams play as Web Audio samples in the single-threaded web build.
-## play("new" | "right" | "wrong" | "warn"). M or the Sound button in the desk's top bar toggles mute (saved locally).
+## play("new" | "right" | "wrong" | "warn" | "type"). M or the Sound button in the desk's top bar toggles mute (saved locally).
 
 const RATE := 22050
 const CFG := "user://settings.cfg"
@@ -20,6 +20,7 @@ func _ready() -> void:
 	_streams["right"] = _make([[523.3, 0.07, "sine", 0.5], [659.3, 0.07, "sine", 0.5], [784.0, 0.16, "sine", 0.55]])
 	_streams["wrong"] = _make([[220.0, 0.12, "square", 0.22], [165.0, 0.22, "square", 0.22]])
 	_streams["warn"] = _make([[988.0, 0.06, "square", 0.18], [0.0, 0.05, "sine", 0.0], [988.0, 0.06, "square", 0.18]])
+	_streams["type"] = _make([[1400.0, 0.025, "square", 0.07]])
 	for i in 4:  # a few voices so overlapping blips don't cut each other off
 		var p := AudioStreamPlayer.new()
 		add_child(p)

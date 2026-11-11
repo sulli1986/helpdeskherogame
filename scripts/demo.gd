@@ -17,6 +17,8 @@ var _timeline: Array = []
 var _auto := false
 var _step_t := 0.0
 var _wrong_done := false
+var _typing: Array = []     # commands still to type into a network ticket's terminal
+var _typed := ""
 
 
 func start(m: Node) -> void:
@@ -51,7 +53,7 @@ func _start_shift() -> void:
 	main.summary.visible = false
 	desk.spawn_scale = 2.4
 	desk.clock_scale = 9.0   # 8am to 5pm in ~47s, leaving time for the shift report
-	desk.first_kind = "mfa"  # Day 3: open on the new MFA fatigue ticket
+	desk.first_kind = "network"  # Day 4: open on a network ticket and use the command prompt
 	desk.start(7)
 	_auto = true
 	_step_t = READ_TIME
@@ -72,7 +74,25 @@ func _process(delta: float) -> void:
 		return
 	if desk.current.is_empty() or desk._answered:
 		desk.next_ticket()
+		_typing.clear()
 		_step_t = READ_TIME
+	elif desk.current.has("term") and not desk.current.get("demo_typed", false):
+		desk.current.demo_typed = true  # Day 4: investigate network tickets in the command prompt
+		_typing = ["ipconfig", "ping 1.1.1.1", "nslookup google.com"]
+		_typed = ""
+		_step_t = 0.3
+	elif not _typing.is_empty():
+		# Type the next command a character at a time, then run it and pause to read the output.
+		var cmd: String = _typing[0]
+		if _typed.length() < cmd.length():
+			_typed = cmd.left(_typed.length() + 1)
+			desk._term_input.text = _typed
+			_step_t = 0.07
+		else:
+			desk.run_command(cmd)
+			_typing.pop_front()
+			_typed = ""
+			_step_t = 1.6
 	else:
 		var pick: int = desk.current.answer
 		if not _wrong_done and _t >= WRONG_AT:

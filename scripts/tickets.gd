@@ -3,6 +3,7 @@ extends RefCounted
 ##   kind, priority (1 = P1 .. 4 = P4), client, user, subject, body,
 ##   info_title, info (evidence shown in a monospace box), question,
 ##   options (Array[String]), answer (index into options), explain (shown after answering)
+##   Optional: term + prompt (a simulated command prompt the player types into; see terminal.gd)
 ## New ticket types: add a _make_<kind>() and list it in KINDS. Keep answers technically right;
 ## the players are often real IT people.
 
@@ -181,33 +182,38 @@ func _make_printer(c: Dictionary) -> Dictionary:
 
 
 # ---------------------------------------------------------------- network
+## The evidence starts hidden: the office is offline, so the tech is on the phone and the player types
+## the commands the user runs in a simulated command prompt on their PC (scripts/terminal.gd) to find it. "term" holds the scenario the terminal plays out.
 func _make_network(c: Dictionary) -> Dictionary:
 	var v := rng.randi() % 3
-	var info := ""
-	match v:
-		0:
-			info = "> ping 192.168.1.1       Reply from 192.168.1.1: time<1ms\n> ping 1.1.1.1           Reply from 1.1.1.1: time=9ms\n> ping google.com        Ping request could not find host google.com\n> nslookup google.com\n  Server: dc01.%s  Address: 192.168.1.10\n  *** dc01 can't find google.com: Server failed" % c.domain
-		1:
-			info = "> ping 192.168.1.1       Reply from 192.168.1.1: time<1ms\n> ping 1.1.1.1           Request timed out. (4/4 lost)\n> tracert 1.1.1.1\n  1  <1 ms  192.168.1.1\n  2  *  *  *  Request timed out.\nRouter:  WAN link DOWN since 09:%02d" % rng.randi_range(2, 58)
-		_:
-			info = "> ipconfig\n  IPv4 Address: 169.254.%d.%d\n  Default Gateway: (blank)\n> ping 192.168.1.1       Destination host unreachable\nDHCP scope 192.168.1.0/24: 100%% in use (%d leases)" % [rng.randi_range(1, 254), rng.randi_range(1, 254), rng.randi_range(200, 220)]
+	var fault: String = ["dns", "wan", "dhcp"][v]
+	var host := "PC-%s" % c.sam.to_upper()
+	var ip := ("169.254.%d.%d" % [rng.randi_range(1, 254), rng.randi_range(1, 254)] if fault == "dhcp"
+		else "192.168.1.%d" % rng.randi_range(50, 199))
+	var term := {
+		"fault": fault, "ip": ip, "gw": "192.168.1.1", "dc": "192.168.1.10",
+		"dns_name": "dc01.%s" % c.domain, "domain": c.domain, "host": host,
+		"isp_hop": "100.64.%d.1" % rng.randi_range(0, 63), "ms": rng.randi_range(8, 24),
+	}
 	return {
 		"priority": 1,
 		"subject": "The internet is down!",
 		"body": "%s: \"Nobody in the office can get on the internet. Clients are waiting!\"" % c.first,
-		"info_title": "From %s's PC" % c.first,
-		"info": info,
+		"info_title": "On the phone: %s types what you read out (%s)" % [c.first, host],
+		"info": "%s has a command prompt open on %s and will type whatever you tell them.\nType a command below (try ipconfig, ping, nslookup, tracert).\n" % [c.first, host],
+		"term": term,
+		"prompt": "C:\\Users\\%s>" % c.sam,
 		"question": "Where's the fault?",
 		"options": [
 			"DNS: fix the DC's forwarders / DNS service",
 			"WAN/ISP: check the internet link and log a fault with the ISP",
-			"DHCP: scope exhausted. Clear stale leases, widen the scope",
+			"DHCP: PCs aren't getting a lease. Check the DHCP service and scope",
 			"Reboot everyone's PC and see if it comes back",
 		],
 		"answer": v,
-		"explain": ["Pings to IPs work but names don't resolve, so it's DNS. The DC can't forward queries.",
-			"LAN is fine (gateway replies) but nothing beyond the router does, and the WAN is down. ISP fault.",
-			"A 169.254 address means no DHCP lease, and the scope is full. Free up or widen the scope."][v],
+		"explain": ["IPs answer (ping 1.1.1.1 replies, tracert completes) but outside names don't resolve. nslookup shows the DC answering for its own domain but returning \"Server failed\" for everything else, so its forwarding is broken (nslookup google.com 8.8.8.8 works, proving it). Fix or replace the DC's forwarders.",
+			"The gateway replies but nothing past it does: ping 1.1.1.1 times out and tracert dies after hop 1. Names fail too, only because the DNS server can't reach the internet either. It's the WAN link: check the router and log it with the ISP.",
+			"ipconfig shows a 169.254 address with no gateway, and /renew can't reach a DHCP server: the PC never got a lease. Check the DHCP service is running and whether the scope is exhausted."][v],
 	}
 
 

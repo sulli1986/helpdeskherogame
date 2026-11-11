@@ -8,6 +8,13 @@ const REQUIRED := ["kind", "priority", "client", "user", "subject", "body", "inf
 # Country/city-specific terms that shouldn't appear (the game is global and generic).
 const BANNED := ["perth", "nbn", "g'day", ".com.au", "fremantle", "freo", "telstra", "optus"]
 
+# Commands run against every simulated terminal (tickets with "term"); each must print something.
+const COMMANDS := ["ipconfig", "ipconfig /all", "ipconfig/all", "ipconfig /renew", "ipconfig /release",
+	"ipconfig /bogus", "ping 192.168.1.1", "ping 1.1.1.1", "ping -n 2 1.1.1.1", "ping google.com",
+	"ping dc01", "ping 192.168.1.77", "nslookup google.com", "nslookup google.com 8.8.8.8",
+	"nslookup 192.168.1.10", "nslookup 1.1.1.1", "nslookup dc01", "tracert 1.1.1.1", "tracert dc01",
+	"tracert google.com", "foo", "help"]
+
 var fails := 0
 
 
@@ -55,6 +62,17 @@ func _check(kind: String, t: Dictionary) -> void:
 		if str(t[k]).strip_edges() == "":
 			_fail(kind, "empty '%s'" % k)
 	var text := " ".join([t.subject, t.body, t.info, t.question, t.explain, t.client, " ".join(opts)]).to_lower()
+	if t.has("term"):
+		var Terminal = load("res://scripts/terminal.gd")
+		if not t.has("prompt"):
+			_fail(kind, "terminal ticket has no prompt")
+		for cmd in COMMANDS:
+			var out: String = Terminal.run(cmd, t.term)
+			if out.strip_edges() == "":
+				_fail(kind, "terminal printed nothing for '%s'" % cmd)
+			if "%s" in out or "%d" in out:
+				_fail(kind, "unfilled placeholder in terminal output for '%s'" % cmd)
+			text += " " + out.to_lower()
 	for b in BANNED:
 		if b in text:
 			_fail(kind, "region-specific term '%s'" % b)

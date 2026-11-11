@@ -1,5 +1,10 @@
 # Changelog
 
+## Day 4 — 2026-11-12
+- Type real commands to find the fault: "The internet is down!" tickets put you on the phone with the user, typing commands into their PC's command prompt
+- The evidence starts hidden: run ipconfig, ping, nslookup and tracert yourself to work out if it's DNS, the ISP link or DHCP
+- Up and Down recall earlier commands, Esc leaves the prompt so 1-4 answer again
+
 ## Day 3 — 2026-11-11
 - MFA fatigue attack at 2am: a new ticket where a user's phone won't stop buzzing with sign-in requests they didn't start
 - Read the Entra sign-in and audit logs: did MFA hold, or did someone get in? Pick the right containment
