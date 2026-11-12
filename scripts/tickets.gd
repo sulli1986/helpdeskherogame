@@ -200,7 +200,7 @@ func _make_network(c: Dictionary) -> Dictionary:
 		"subject": "The internet is down!",
 		"body": "%s: \"Nobody in the office can get on the internet. Clients are waiting!\"" % c.first,
 		"info_title": "On the phone: %s types what you read out (%s)" % [c.first, host],
-		"info": "%s has a command prompt open on %s and will type whatever you tell them.\nType a command below (try ipconfig, ping, nslookup, tracert).\n" % [c.first, host],
+		"info": "%s has a command prompt open on %s and will type whatever you tell them.\nRun a command below (try ipconfig, ping, nslookup, tracert).\n" % [c.first, host],
 		"term": term,
 		"prompt": "C:\\Users\\%s>" % c.sam,
 		"question": "Where's the fault?",
@@ -213,7 +213,7 @@ func _make_network(c: Dictionary) -> Dictionary:
 		"answer": v,
 		"explain": ["IPs answer (ping 1.1.1.1 replies, tracert completes) but outside names don't resolve. nslookup shows the DC answering for its own domain but returning \"Server failed\" for everything else, so its forwarding is broken (nslookup google.com 8.8.8.8 works, proving it). Fix or replace the DC's forwarders.",
 			"The gateway replies but nothing past it does: ping 1.1.1.1 times out and tracert dies after hop 1. Names fail too, only because the DNS server can't reach the internet either. It's the WAN link: check the router and log it with the ISP.",
-			"ipconfig shows a 169.254 address with no gateway, and /renew can't reach a DHCP server: the PC never got a lease. Check the DHCP service is running and whether the scope is exhausted."][v],
+			"ipconfig shows a 169.254 address with no gateway, and renewing the lease can't reach a DHCP server: the PC has no lease. Check the DHCP service is running and whether the scope is exhausted."][v],
 	}
 
 

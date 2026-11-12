@@ -18,6 +18,9 @@ const REP_WRONG := 8.0
 const REP_BREACH := 12.0
 const REP_RIGHT := 2.0
 const MAX_QUEUE := 8
+## Commands offered as tap-to-run buttons under the prompt on touchscreens.
+const TERM_CHIPS := ["ipconfig", "ping 192.168.1.1", "ping 1.1.1.1", "nslookup google.com", "tracert 1.1.1.1",
+	"ipconfig /renew", "ping google.com", "nslookup google.com 8.8.8.8"]
 
 var gen: RefCounted
 var sfx: Node              # scripts/sfx.gd, set by main before _ready
@@ -55,6 +58,10 @@ var _info_scroll: ScrollContainer  # grows to fit, except terminal tickets: fixe
 var _term_row: HBoxContainer   # command prompt under the evidence box (network tickets)
 var _term_prompt: Label
 var _term_input: LineEdit
+var _term_chips: HBoxContainer   # tap-to-run commands (one swipeable row), so phones don't need the keyboard
+var _chip_scroll: ScrollContainer
+var _press_at := Vector2.ZERO  # where a press on the feedback panel started (tap vs scroll)
+var _touch := false            # touchscreen: show the chips and "tap" wording
 var _term_hist: Array = []
 var _term_hist_i := 0
 var _question: Label
@@ -168,6 +175,8 @@ func answer(i: int) -> void:
 	_term_input.release_focus()  # so Enter goes to the next ticket
 	_term_input.editable = false
 	_term_input.focus_mode = Control.FOCUS_NONE
+	for chip in _term_chips.get_children():
+		chip.disabled = true
 	_show_feedback(ok, pay)
 	_remove(current)
 
@@ -235,7 +244,9 @@ func _breach(t: Dictionary) -> void:
 		_term_input.release_focus()
 		_term_input.editable = false
 		_term_input.focus_mode = Control.FOCUS_NONE
-		_feedback_label.text = "SLA breached. The client escalated to their account manager.\n\n%s\n\nEnter: next ticket" % t.explain
+		for chip in _term_chips.get_children():
+			chip.disabled = true
+		_feedback_label.text = "SLA breached. The client escalated to their account manager.\n\n%s\n\n%s" % [t.explain, _next_hint()]
 		_feedback.add_theme_stylebox_override("panel", UI.box(UI.BAD.darkened(0.6), 8, 14))
 		_feedback.visible = true
 		_scroll_to_feedback()
@@ -291,9 +302,12 @@ func _show_ticket(t: Dictionary) -> void:
 	_body.text = t.body
 	_info_title.text = t.info_title
 	_info.text = t.info
-	_info_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO if t.has("term") else ScrollContainer.SCROLL_MODE_DISABLED
-	_info_scroll.custom_minimum_size.y = clampf(get_viewport_rect().size.y * 0.3, 160.0, 320.0) if t.has("term") else 0.0
+	_size_console()
 	_term_row.visible = t.has("term")
+	_chip_scroll.visible = t.has("term") and _touch
+	_chip_scroll.scroll_horizontal = 0
+	for chip in _term_chips.get_children():
+		chip.disabled = false
 	_term_input.text = ""
 	_term_input.editable = true
 	_term_input.focus_mode = Control.FOCUS_ALL
@@ -339,6 +353,15 @@ func run_command(line: String) -> void:
 	_info_scroll.scroll_vertical = int(_info_scroll.get_v_scroll_bar().max_value)
 
 
+## Terminal tickets get a fixed-height console that follows the output; shorter in portrait so
+## the answers stay on screen under it.
+func _size_console() -> void:
+	var term: bool = not current.is_empty() and current.has("term")
+	var vp := get_viewport_rect().size
+	_info_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO if term else ScrollContainer.SCROLL_MODE_DISABLED
+	_info_scroll.custom_minimum_size.y = clampf(vp.y * (0.2 if vp.y > vp.x else 0.3), 150.0, 320.0) if term else 0.0
+
+
 func _on_term_key(e: InputEvent) -> void:
 	# Up/Down recall earlier commands (and must not switch tickets while typing).
 	if not (e is InputEventKey) or not e.pressed:
@@ -372,10 +395,14 @@ func _mark_options(chosen: int) -> void:
 
 func _show_feedback(ok: bool, pay: int) -> void:
 	var head := ("Resolved. +$%d" % pay) if ok else "Wrong call. Escalated to Tier 2."
-	_feedback_label.text = "%s\n\n%s\n\nEnter: next ticket" % [head, current.explain]
+	_feedback_label.text = "%s\n\n%s\n\n%s" % [head, current.explain, _next_hint()]
 	_feedback.add_theme_stylebox_override("panel", UI.box((UI.GOOD if ok else UI.BAD).darkened(0.6), 8, 14))
 	_feedback.visible = true
 	_scroll_to_feedback()
+
+
+func _next_hint() -> String:
+	return "Tap here or press Enter for the next ticket" if _touch else "Enter: next ticket"
 
 
 func _scroll_to_feedback() -> void:
@@ -556,6 +583,25 @@ func _build() -> void:
 	_term_input.text_submitted.connect(run_command)
 	_term_input.gui_input.connect(_on_term_key)
 	_term_row.add_child(_term_input)
+	_touch = DisplayServer.is_touchscreen_available()
+	_chip_scroll = ScrollContainer.new()
+	_chip_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	_chip_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_SHOW_NEVER  # swipe; no bar
+	_detail.add_child(_chip_scroll)
+	_term_chips = HBoxContainer.new()
+	_term_chips.add_theme_constant_override("separation", 8)
+	_chip_scroll.add_child(_term_chips)
+	for cmd in TERM_CHIPS:
+		var chip := Button.new()
+		chip.text = cmd
+		chip.focus_mode = Control.FOCUS_NONE
+		chip.add_theme_font_override("font", UI.mono())
+		chip.add_theme_font_size_override("font_size", 13)
+		chip.custom_minimum_size = Vector2(0, 46)
+		chip.pressed.connect(run_command.bind(cmd))
+		_term_chips.add_child(chip)
+	if _touch:
+		_term_input.placeholder_text = "tap a command below (swipe for more)"
 	_question = UI.label(_detail, "", 16, UI.ACCENT)
 	_opts = VBoxContainer.new()
 	_opts.add_theme_constant_override("separation", 6)
@@ -566,8 +612,12 @@ func _build() -> void:
 	_feedback_label = UI.wrap(UI.label(_feedback, "", 15, UI.TEXT))
 	_feedback.mouse_filter = Control.MOUSE_FILTER_STOP
 	_feedback.gui_input.connect(func(e: InputEvent) -> void:
-		if e is InputEventMouseButton and e.pressed:
-			next_ticket())
+		# Advance on a tap/click, not on a press that turns into a scroll (or a mouse wheel).
+		if e is InputEventMouseButton and e.button_index == MOUSE_BUTTON_LEFT:
+			if e.pressed:
+				_press_at = e.global_position
+			elif e.global_position.distance_to(_press_at) < 12.0:
+				next_ticket())
 
 	_toast = Label.new()
 	_toast.add_theme_font_size_override("font_size", 26)
@@ -590,6 +640,7 @@ func _relayout() -> void:
 	_layout.vertical = portrait
 	_brand.visible = vp.x >= 640  # phones: make room in the top bar for clock, cash, rep and sound
 	_top_row.add_theme_constant_override("separation", 18 if vp.x >= 640 else 10)
+	_size_console()
 	_toast.position.y = 58.0 if portrait else 6.0  # below the top bar in portrait, in its middle otherwise
 	if portrait:
 		_queue_panel.custom_minimum_size = Vector2(0, vp.y * 0.17)
