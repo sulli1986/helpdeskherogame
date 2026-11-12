@@ -4,6 +4,9 @@ extends RefCounted
 ##   info_title, info (evidence shown in a monospace box), question,
 ##   options (Array[String]), answer (index into options), explain (shown after answering)
 ##   Optional: term + prompt (a simulated command prompt the player types into; see terminal.gd)
+##   Optional: steps (Array of later steps on the same ticket, each with name, info_add, question,
+##   options, answer, explain). The top-level question is step 1; info_add is appended to the evidence
+##   when that step opens. Each step pays out; a wrong step escalates the ticket.
 ## New ticket types: add a _make_<kind>() and list it in KINDS. Keep answers technically right;
 ## the players are often real IT people.
 
@@ -47,6 +50,8 @@ func make(kind := "") -> Dictionary:
 	t["client"] = ctx.client
 	t["user"] = ctx.user
 	_shuffle_options(t)
+	for st in t.get("steps", []):
+		_shuffle_options(st)
 	return t
 
 
@@ -205,15 +210,74 @@ func _make_network(c: Dictionary) -> Dictionary:
 		"prompt": "C:\\Users\\%s>" % c.sam,
 		"question": "Where's the fault?",
 		"options": [
-			"DNS: fix the DC's forwarders / DNS service",
-			"WAN/ISP: check the internet link and log a fault with the ISP",
-			"DHCP: PCs aren't getting a lease. Check the DHCP service and scope",
+			"DNS: the DC can't resolve outside names",
+			"WAN/ISP: the internet link is down",
+			"DHCP: PCs aren't getting a lease",
 			"Reboot everyone's PC and see if it comes back",
 		],
 		"answer": v,
-		"explain": ["IPs answer (ping 1.1.1.1 replies, tracert completes) but outside names don't resolve. nslookup shows the DC answering for its own domain but returning \"Server failed\" for everything else, so its forwarding is broken (nslookup google.com 8.8.8.8 works, proving it). Fix or replace the DC's forwarders.",
-			"The gateway replies but nothing past it does: ping 1.1.1.1 times out and tracert dies after hop 1. Names fail too, only because the DNS server can't reach the internet either. It's the WAN link: check the router and log it with the ISP.",
-			"ipconfig shows a 169.254 address with no gateway, and renewing the lease can't reach a DHCP server: the PC has no lease. Check the DHCP service is running and whether the scope is exhausted."][v],
+		"explain": ["IPs answer (ping 1.1.1.1 replies, tracert completes) but outside names don't resolve. nslookup shows the DC answering for its own domain but returning \"Server failed\" for everything else, so its forwarding is broken (nslookup google.com 8.8.8.8 works, proving it). Next: find out why it can't forward.",
+			"The gateway replies but nothing past it does: ping 1.1.1.1 times out and tracert dies after hop 1. Names fail too, only because the DNS server can't reach the internet either. It's the WAN link. Next: find out why.",
+			"ipconfig shows a 169.254 address with no gateway, and renewing the lease can't reach a DHCP server: the PC has no lease. Next: find out why the DHCP server isn't answering."][v],
+		"step_name": "Diagnose",
+		"steps": [_network_fix(fault, term, c.first)],
+	}
+
+
+## Step 2 of a network ticket: you're now on the server/router, and the evidence says why it broke.
+func _network_fix(fault: String, term: Dictionary, first: String) -> Dictionary:
+	var sub := rng.randi() % 2
+	var info := ""
+	var options: Array = []
+	var explain := ""
+	match fault:
+		"dns":
+			options = [
+				"Replace the dead forwarder with working resolvers, then clear the DNS server cache",
+				"Allow DNS (UDP and TCP 53) out from DC01 on the firewall",
+				"Point every PC's DNS straight at 8.8.8.8",
+				"Run ipconfig /flushdns on every PC",
+			]
+			if sub == 0:
+				info = "DNS Manager on DC01 > Forwarders:\n  203.0.113.53   <Timed out>   (old ISP's resolver; the client changed ISP last month)\n  Use root hints if no forwarders are available: off\nFirewall log: 192.168.1.10 -> 203.0.113.53 udp/53 ALLOW (no reply)"
+				explain = "The only forwarder is the old ISP's resolver, which no longer answers, and root hints are off, so DC01 has nowhere to send outside lookups. Swap in working resolvers and clear the server cache. Pointing PCs at 8.8.8.8 would break Active Directory, which needs the DC for DNS."
+			else:
+				info = "DNS Manager on DC01 > Forwarders:\n  1.1.1.1   <Timed out>\n  8.8.8.8   <Timed out>\nFirewall log: 192.168.1.10 -> 1.1.1.1 udp/53 DENY (rule \"Servers: HTTPS out only\", added yesterday)\n              192.168.1.10 -> 8.8.8.8 udp/53 DENY (same rule)\n              %s -> 8.8.8.8 udp/53 ALLOW  (%s)" % [term.ip, term.host]
+				explain = "The forwarders are fine, but yesterday's firewall rule only lets DC01 out on HTTPS, so its DNS queries are dropped (PCs can still reach 8.8.8.8, which is why that nslookup worked). Allow DNS out from the DC. Pointing PCs at 8.8.8.8 would break Active Directory."
+		"wan":
+			options = [
+				"Log a fault with the ISP, fail over to the 4G/5G backup if there is one, and give the client an ETA",
+				"Have someone onsite check the ISP modem's power and cabling before calling the ISP",
+				"Factory-reset the office router",
+				"Change DC01's DNS forwarders",
+			]
+			if sub == 0:
+				info = "Router (%s) > WAN1:\n  Link: up   Public IP: none (no reply from the ISP)\n  ISP modem lights: power and line normal, internet off\nISP status page: outage reported in the client's area, ETA 2 hours" % term.gw
+				explain = "The cable and modem are fine and the ISP has confirmed an outage. Log it so you're on their list, fail over to a backup link if the client has one, and tell the client the ETA. Factory-resetting the router just loses its config."
+			else:
+				info = "Router (%s) > WAN1:\n  Link: DOWN (no carrier)\n  ISP modem lights: all off\nISP status page: no known issues\nCabinet: router is on the UPS; the modem plugs into a separate power strip\nCall notes: the cleaners were in the network cabinet last night" % term.gw
+				explain = "No carrier and a dark modem means it has no power, not an ISP fault. Get someone onsite to check the power and cable first; calling the ISP now wastes time and can cost a fee if they send a technician."
+		_:  # dhcp
+			options = [
+				"Start the DHCP Server service and set it to restart on failure",
+				"Authorise DC01's DHCP server in Active Directory",
+				"Give every PC a static IP address",
+				"Restart the office router",
+			]
+			if sub == 0:
+				info = "DC01 > Services:\n  DHCP Server   Stopped   (Startup: Automatic, Recovery: Take No Action)\nSystem log, event 7031: the DHCP Server service terminated unexpectedly during last night's updates\nScope 192.168.1.50-192.168.1.199 (150 addresses): about 64 in use at yesterday's close"
+				explain = "The DHCP Server service stopped and nothing restarted it. Start it and set its recovery options to restart on failure; PCs will pick up leases on their next retry or an ipconfig /renew. Static IPs for everyone is a maintenance nightmare."
+			else:
+				info = "DC01 > Services:\n  DHCP Server   Running\nSystem log, event 1046: the DHCP service has determined that it is not authorized to service clients on this network\nChange log: DHCP was migrated to DC01 from the old server last night"
+				explain = "The service is running, but in an Active Directory domain a Windows DHCP server won't hand out leases until it's authorised in AD, and the migration missed that step. Authorise it (DHCP console > right-click the server > Authorize). Restarting the router won't help: DC01 is the DHCP server here, not the router."
+	return {
+		"name": "Fix",
+		"info_add": ("\n--- %s opens the router's status page (http://%s) and reads it out ---\n%s\n" % [first, term.gw, info] if fault == "wan"
+			else "\n--- You remote onto DC01 to find out why ---\n%s\n" % info),
+		"question": "How do you fix it?",
+		"options": options,
+		"answer": sub,
+		"explain": explain,
 	}
 
 

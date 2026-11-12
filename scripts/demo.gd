@@ -53,7 +53,7 @@ func _start_shift() -> void:
 	main.summary.visible = false
 	desk.spawn_scale = 2.4
 	desk.clock_scale = 9.0   # 8am to 5pm in ~47s, leaving time for the shift report
-	desk.first_kind = "network"  # Day 4: open on a network ticket and use the command prompt
+	desk.first_kind = "network"  # Days 4-5: open on a network ticket: command prompt, then the fix step
 	desk.start(7)
 	_auto = true
 	_step_t = READ_TIME

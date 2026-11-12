@@ -3,7 +3,7 @@ extends Control
 ## Answer with the option buttons or keys 1-4, Enter for the next ticket, Tab / arrows to switch.
 
 signal shift_ended(stats: Dictionary)
-signal cash_earned(amount: int)
+signal cash_earned(amount: int, resolved: bool)  # resolved: the ticket is closed (not just one step)
 
 const Tickets := preload("res://scripts/tickets.gd")
 const UI := preload("res://scripts/ui.gd")
@@ -17,6 +17,7 @@ const PAY := {1: 300, 2: 200, 3: 120, 4: 80}
 const REP_WRONG := 8.0
 const REP_BREACH := 12.0
 const REP_RIGHT := 2.0
+const STEP_PAY := 0.75                 # multi-step tickets: each step pays this share of the ticket's pay
 const MAX_QUEUE := 8
 ## Commands offered as tap-to-run buttons under the prompt on touchscreens.
 const TERM_CHIPS := ["ipconfig", "ping 192.168.1.1", "ping 1.1.1.1", "nslookup google.com", "tracert 1.1.1.1",
@@ -155,16 +156,20 @@ func answer(i: int) -> void:
 	if i < 0 or i >= opts.size():
 		return
 	_answered = true
-	solved += 1
 	var ok: bool = i == current.answer
+	var more: bool = ok and not current.get("steps", []).is_empty()  # right, but there's another step
+	if not more:
+		solved += 1
 	var pay := 0
 	if ok:
-		correct += 1
 		var left_frac: float = clampf(1.0 - current.age / SLA[current.priority], 0.0, 1.0)
-		pay = int(round(PAY[current.priority] * (1.0 + 0.5 * left_frac) / 10.0)) * 10
+		var share: float = STEP_PAY if current.has("steps") else 1.0
+		pay = int(round(PAY[current.priority] * share * (1.0 + 0.5 * left_frac) / 10.0)) * 10
 		cash += pay
-		rep = minf(100.0, rep + REP_RIGHT)
-		cash_earned.emit(pay)
+		if not more:
+			correct += 1
+			rep = minf(100.0, rep + REP_RIGHT)
+		cash_earned.emit(pay, not more)
 		_show_toast("+$%d" % pay, UI.GOOD)
 		_sfx("right")
 	else:
@@ -177,14 +182,29 @@ func answer(i: int) -> void:
 	_term_input.focus_mode = Control.FOCUS_NONE
 	for chip in _term_chips.get_children():
 		chip.disabled = true
-	_show_feedback(ok, pay)
-	_remove(current)
+	_show_feedback(ok, pay, more)
+	if more:
+		_advance_step(current)
+	else:
+		_remove(current)
+
+
+## Load a multi-step ticket's next step into it. It stays in the queue (SLA still running) and
+## opens at the new step on Enter / tap, or whenever the player comes back to it.
+func _advance_step(t: Dictionary) -> void:
+	var st: Dictionary = t.steps.pop_front()
+	t.step_no = t.get("step_no", 1) + 1
+	t.step_name = st.name
+	t.info += st.info_add
+	for k in ["question", "options", "answer", "explain"]:
+		t[k] = st[k]
+	(t.row.get_meta("subject") as Label).text = "%s  (step %d: %s)" % [t.subject, t.step_no, st.name]
 
 
 func next_ticket() -> void:
 	if not running:
 		return
-	_show_ticket(_most_urgent())
+	_show_ticket(current if current in queue and _answered else _most_urgent())
 
 
 func select_offset(step: int) -> void:
@@ -250,6 +270,9 @@ func _breach(t: Dictionary) -> void:
 		_feedback.add_theme_stylebox_override("panel", UI.box(UI.BAD.darkened(0.6), 8, 14))
 		_feedback.visible = true
 		_scroll_to_feedback()
+	elif t.id == current.get("id", -1):  # breached between steps: the next step is gone
+		_feedback_label.text = "SLA breached before the fix. The client escalated to their account manager.\n\n%s" % _next_hint()
+		_feedback.add_theme_stylebox_override("panel", UI.box(UI.BAD.darkened(0.6), 8, 14))
 	_remove(t)
 
 
@@ -298,13 +321,17 @@ func _show_ticket(t: Dictionary) -> void:
 	t.row.add_theme_stylebox_override("panel", UI.box(UI.ROW_SEL, 6, 10, UI.ACCENT))
 	_subject.text = "#%d  %s" % [t.id, t.subject]
 	_meta.text = "P%d  ·  %s  ·  %s" % [t.priority, t.client, t.user]
+	if t.has("step_name"):
+		var total: int = t.get("step_no", 1) + t.steps.size()
+		_meta.text += "  ·  Step %d of %d: %s" % [t.get("step_no", 1), total, t.step_name]
 	_meta.add_theme_color_override("font_color", UI.PRIORITY[t.priority])
 	_body.text = t.body
 	_info_title.text = t.info_title
 	_info.text = t.info
 	_size_console()
-	_term_row.visible = t.has("term")
-	_chip_scroll.visible = t.has("term") and _touch
+	var live_term: bool = t.has("term") and t.get("step_no", 1) == 1  # later steps: the console is evidence only
+	_term_row.visible = live_term
+	_chip_scroll.visible = live_term and _touch
 	_chip_scroll.scroll_horizontal = 0
 	for chip in _term_chips.get_children():
 		chip.disabled = false
@@ -316,6 +343,8 @@ func _show_ticket(t: Dictionary) -> void:
 	else:
 		_term_input.release_focus()
 	_question.text = t.question
+	if t.has("term") and t.get("step_no", 1) > 1:
+		_console_to_end()  # the new step's evidence was added at the bottom
 	for c in _opts.get_children():
 		c.queue_free()
 	for i in t.options.size():
@@ -331,7 +360,7 @@ func _show_ticket(t: Dictionary) -> void:
 
 ## Run a command in the open ticket's simulated command prompt and append the output.
 func run_command(line: String) -> void:
-	if current.is_empty() or not current.has("term") or not running or _answered:
+	if current.is_empty() or not current.has("term") or not running or _answered or current.get("step_no", 1) > 1:
 		return
 	line = line.strip_edges()
 	_term_input.text = ""
@@ -348,6 +377,10 @@ func run_command(line: String) -> void:
 			current.info = "\n".join(lines.slice(lines.size() - 80))
 	_info.text = current.info
 	_sfx("type")
+	_console_to_end()
+
+
+func _console_to_end() -> void:
 	await get_tree().process_frame
 	await get_tree().process_frame
 	_info_scroll.scroll_vertical = int(_info_scroll.get_v_scroll_bar().max_value)
@@ -393,9 +426,14 @@ func _mark_options(chosen: int) -> void:
 			b.add_theme_stylebox_override("disabled", UI.box(UI.BAD.darkened(0.55), 6, 8))
 
 
-func _show_feedback(ok: bool, pay: int) -> void:
+func _show_feedback(ok: bool, pay: int, more := false) -> void:
 	var head := ("Resolved. +$%d" % pay) if ok else "Wrong call. Escalated to Tier 2."
-	_feedback_label.text = "%s\n\n%s\n\n%s" % [head, current.explain, _next_hint()]
+	if more:
+		head = "%s: right. +$%d" % [current.step_name, pay]
+	var hint := _next_hint()
+	if more:
+		hint = "Tap here or press Enter for the next step" if _touch else "Enter: next step"
+	_feedback_label.text = "%s\n\n%s\n\n%s" % [head, current.explain, hint]
 	_feedback.add_theme_stylebox_override("panel", UI.box((UI.GOOD if ok else UI.BAD).darkened(0.6), 8, 14))
 	_feedback.visible = true
 	_scroll_to_feedback()
@@ -458,7 +496,9 @@ func _make_row(t: Dictionary) -> PanelContainer:
 	client.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	client.clip_text = true
 	var time := UI.label(top, "", 15, UI.MUTED)
-	UI.label(v, t.subject, 14, UI.MUTED).clip_text = true
+	var subj := UI.label(v, t.subject, 14, UI.MUTED)
+	subj.clip_text = true
+	row.set_meta("subject", subj)
 	var bar := ProgressBar.new()
 	bar.show_percentage = false
 	bar.custom_minimum_size = Vector2(0, 5)

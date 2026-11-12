@@ -143,9 +143,9 @@ func start_shift() -> void:
 	track("shift_start", {"mode": "member" if _logged_in else "guest"})
 
 
-func _on_cash_earned(amount: int) -> void:
+func _on_cash_earned(amount: int, resolved: bool) -> void:
 	career.coins += amount
-	career.solved += 1
+	career.solved += int(resolved)  # a multi-step ticket pays per step but counts once
 	if _logged_in:
 		_cash_save_timer = CASH_SAVE_DELAY
 

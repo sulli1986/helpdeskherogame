@@ -30,6 +30,10 @@ func _init() -> void:
 			_check(kind, t)
 			if t.has("options") and t.has("answer") and t.answer >= 0 and t.answer < t.options.size():
 				answers[t.options[t.answer]] = true
+			for si in t.get("steps", []).size():  # later steps must vary too
+				var st: Dictionary = t.steps[si]
+				if st.get("options", []) is Array and st.get("answer", -1) is int and st.answer >= 0 and st.answer < st.options.size():
+					answers["step%d:%s" % [si, st.options[st.answer]]] = true
 		# A ticket type whose right answer never varies is a memory test, not a puzzle.
 		if answers.size() < 2:
 			_fail(kind, "right answer never changes across %d tickets" % PER_KIND)
@@ -47,21 +51,27 @@ func _check(kind: String, t: Dictionary) -> void:
 	if not (t.priority is int) or t.priority < 1 or t.priority > 4:
 		_fail(kind, "priority %s not 1-4" % str(t.priority))
 	var opts: Array = t.options
-	if opts.size() < 2 or opts.size() > 4:
-		_fail(kind, "%d options (need 2-4, answered with keys 1-4)" % opts.size())
-	if t.answer < 0 or t.answer >= opts.size():
-		_fail(kind, "answer index %d out of range" % t.answer)
-	var seen := {}
-	for o in opts:
-		if str(o).strip_edges() == "":
-			_fail(kind, "empty option")
-		if seen.has(o):
-			_fail(kind, "duplicate option '%s'" % o)
-		seen[o] = true
+	_check_options(kind, opts, t.answer)
 	for k in ["subject", "body", "info", "question", "explain", "client", "user"]:
 		if str(t[k]).strip_edges() == "":
 			_fail(kind, "empty '%s'" % k)
 	var text := " ".join([t.subject, t.body, t.info, t.question, t.explain, t.client, " ".join(opts)]).to_lower()
+	if t.has("steps"):
+		if not t.has("step_name"):
+			_fail(kind, "multi-step ticket has no step_name for step 1")
+		if not (t.steps is Array) or t.steps.is_empty():
+			_fail(kind, "steps is empty")
+		else:
+			for st in t.steps:
+				for k in ["name", "info_add", "question", "options", "answer", "explain"]:
+					if not st.has(k):
+						_fail(kind, "step missing field '%s'" % k)
+						return
+				_check_options(kind, st.options, st.answer)
+				for k in ["name", "info_add", "question", "explain"]:
+					if str(st[k]).strip_edges() == "":
+						_fail(kind, "empty step '%s'" % k)
+				text += " " + " ".join([st.info_add, st.question, st.explain, " ".join(st.options)]).to_lower()
 	if t.has("term"):
 		var Terminal = load("res://scripts/terminal.gd")
 		if not t.has("prompt"):
@@ -78,6 +88,20 @@ func _check(kind: String, t: Dictionary) -> void:
 			_fail(kind, "region-specific term '%s'" % b)
 	if "%" in text.replace("%%", "") and ("%s" in text or "%d" in text):
 		_fail(kind, "unfilled format placeholder")
+
+
+func _check_options(kind: String, opts: Array, answer: int) -> void:
+	if opts.size() < 2 or opts.size() > 4:
+		_fail(kind, "%d options (need 2-4, answered with keys 1-4)" % opts.size())
+	if answer < 0 or answer >= opts.size():
+		_fail(kind, "answer index %d out of range" % answer)
+	var seen := {}
+	for o in opts:
+		if str(o).strip_edges() == "":
+			_fail(kind, "empty option")
+		if seen.has(o):
+			_fail(kind, "duplicate option '%s'" % o)
+		seen[o] = true
 
 
 func _fail(kind: String, msg: String) -> void:
