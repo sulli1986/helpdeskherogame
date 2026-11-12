@@ -105,12 +105,19 @@ func _ready() -> void:
 	api.try_resume()
 
 
-## Phones in portrait get a phone-sized canvas; otherwise the 1280x720 desktop layout is
-## shrunk to a third of the screen and too small to read or tap.
+## Phones get a phone-sized canvas; otherwise the 1280x720 desktop layout is shrunk to a
+## third of the screen and too small to read or tap. Portrait: 480 wide. Landscape on a short
+## screen (a phone on its side, under ~600 CSS px tall): 480 tall.
 func _fit_ui_scale() -> void:
 	var w := get_window()
 	var portrait := w.size.y > w.size.x
-	w.content_scale_size = Vector2i(540, 960) if portrait else Vector2i(1280, 720)
+	var css_h: float = w.size.y / maxf(DisplayServer.screen_get_scale(), 1.0)
+	if portrait:
+		w.content_scale_size = Vector2i(480, 854)
+	elif css_h < 600.0:
+		w.content_scale_size = Vector2i(roundi(480.0 * w.size.x / w.size.y), 480)
+	else:
+		w.content_scale_size = Vector2i(1280, 720)
 
 
 func _process(delta: float) -> void:
@@ -139,6 +146,7 @@ func _process(delta: float) -> void:
 func start_shift() -> void:
 	title.visible = false
 	summary.visible = false
+	_news_corner.visible = false  # it sat over the ticket on phones; V still opens What's new
 	desk.start()
 	track("shift_start", {"mode": "member" if _logged_in else "guest"})
 
@@ -164,6 +172,7 @@ func _on_shift_ended(stats: Dictionary) -> void:
 		"★".repeat(stars) + "☆".repeat(5 - stars), UI.money(career.coins),
 		"" if _logged_in else "\n(Guest: log in to save your career)"]
 	summary.visible = true
+	_news_corner.visible = not _demo
 	track("shift_end", {"cash": stats.cash, "accuracy": acc})
 
 

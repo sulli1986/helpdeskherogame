@@ -27,9 +27,15 @@ func bind(api: Node) -> void:
 
 func _ready() -> void:
 	set_anchors_preset(Control.PRESET_FULL_RECT)
+	# Scrolls when the screen is too short for it (a phone on its side); centred otherwise.
+	var scroll := ScrollContainer.new()
+	scroll.set_anchors_preset(Control.PRESET_FULL_RECT)
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	add_child(scroll)
 	var center := CenterContainer.new()
-	center.set_anchors_preset(Control.PRESET_FULL_RECT)
-	add_child(center)
+	center.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	center.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	scroll.add_child(center)
 	_layout = BoxContainer.new()
 	_layout.add_theme_constant_override("separation", 16)
 	center.add_child(_layout)
@@ -87,7 +93,7 @@ func _ready() -> void:
 	_status = UI.wrap(UI.label(box, "", 14, Color(1, 0.7, 0.6)))
 	_status.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 
-	var how := UI.wrap(UI.label(box, "How to play: open a ticket, read the evidence, pick the fix (keys 1-4). Right answers pay more the faster you are. Wrong calls and SLA breaches cost reputation. M toggles sound.", 13, UI.MUTED))
+	var how := UI.wrap(UI.label(box, "How to play: open a ticket, read the evidence, pick the fix (tap it, or keys 1-4). Right answers pay more the faster you are. Wrong calls and SLA breaches cost reputation. M toggles sound.", 13, UI.MUTED))
 	how.custom_minimum_size = Vector2(340, 0)
 
 	# Leaderboard

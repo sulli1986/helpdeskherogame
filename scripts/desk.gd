@@ -109,8 +109,8 @@ func start(seed_value := -1) -> void:
 	_next_spawn = 3.0
 	running = true
 	visible = true
-	_spawn()
 	_show_ticket({})
+	_spawn()  # opens the first ticket straight away
 	_update_bar()
 
 
@@ -336,8 +336,9 @@ func _show_ticket(t: Dictionary) -> void:
 	for chip in _term_chips.get_children():
 		chip.disabled = false
 	_term_input.text = ""
-	_term_input.editable = true
-	_term_input.focus_mode = Control.FOCUS_ALL
+	# Touchscreens use the command buttons: the on-screen keyboard covered the ticket.
+	_term_input.editable = not _touch
+	_term_input.focus_mode = Control.FOCUS_NONE if _touch else Control.FOCUS_ALL
 	if t.has("term"):
 		_term_prompt.text = t.prompt
 	else:
@@ -353,7 +354,7 @@ func _show_ticket(t: Dictionary) -> void:
 		b.alignment = HORIZONTAL_ALIGNMENT_LEFT
 		b.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		b.focus_mode = Control.FOCUS_NONE
-		b.custom_minimum_size = Vector2(0, 40)
+		b.custom_minimum_size = Vector2(0, 52 if _touch else 40)
 		b.pressed.connect(answer.bind(i))
 		_opts.add_child(b)
 
@@ -596,7 +597,7 @@ func _build() -> void:
 	_detail.add_theme_constant_override("separation", 8)
 	_detail.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	dwrap.add_child(_detail)
-	_subject = UI.label(_detail, "", 22, UI.TEXT)
+	_subject = UI.wrap(UI.label(_detail, "", 22, UI.TEXT))  # long subjects ran off phone screens
 	_meta = UI.label(_detail, "", 14, UI.MUTED)
 	_body = UI.wrap(UI.label(_detail, "", 16, UI.TEXT))
 	_info_title = UI.label(_detail, "", 13, UI.MUTED)
@@ -642,6 +643,8 @@ func _build() -> void:
 		_term_chips.add_child(chip)
 	if _touch:
 		_term_input.placeholder_text = "tap a command below (swipe for more)"
+		_term_input.editable = false
+		_term_input.focus_mode = Control.FOCUS_NONE
 	_question = UI.label(_detail, "", 16, UI.ACCENT)
 	_opts = VBoxContainer.new()
 	_opts.add_theme_constant_override("separation", 6)
@@ -680,10 +683,11 @@ func _relayout() -> void:
 	_layout.vertical = portrait
 	_brand.visible = vp.x >= 640  # phones: make room in the top bar for clock, cash, rep and sound
 	_top_row.add_theme_constant_override("separation", 18 if vp.x >= 640 else 10)
+	_rep_bar.custom_minimum_size.x = 110.0 if vp.x >= 640 else 64.0  # keep the Sound button on screen
 	_size_console()
 	_toast.position.y = 58.0 if portrait else 6.0  # below the top bar in portrait, in its middle otherwise
 	if portrait:
-		_queue_panel.custom_minimum_size = Vector2(0, vp.y * 0.17)
+		_queue_panel.custom_minimum_size = Vector2(0, vp.y * 0.21)  # room for two and a bit tickets
 		_queue_panel.size_flags_vertical = Control.SIZE_FILL
 	else:
 		_queue_panel.custom_minimum_size = Vector2(minf(380.0, size.x * 0.34), 0)

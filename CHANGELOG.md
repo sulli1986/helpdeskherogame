@@ -3,7 +3,7 @@
 ## Day 5 — 2026-11-13
 - Find it, then fix it: "The internet is down!" tickets now have two steps. Diagnose the fault in the command prompt, then remote onto the server or router and pick the right fix
 - Each step pays, but a wrong fix still escalates the ticket. Was it a dead DNS forwarder or a new firewall rule? A stopped DHCP service or one that was never authorised? An ISP outage or a modem with no power?
-- After a right diagnosis, press Enter (or tap the result) to move on to the fix. The ticket keeps its SLA clock, so don't dawdle
+- Better on phones: bigger text (sideways too), the first ticket opens straight away, and command buttons instead of the on-screen keyboard. After a right diagnosis, tap the result or press Enter for the fix step
 
 ## Day 4 — 2026-11-12
 - Type real commands to find the fault: "The internet is down!" tickets put you on the phone with the user, typing commands into their PC's command prompt
