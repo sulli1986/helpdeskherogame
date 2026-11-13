@@ -53,7 +53,7 @@ func _start_shift() -> void:
 	main.summary.visible = false
 	desk.spawn_scale = 2.4
 	desk.clock_scale = 9.0   # 8am to 5pm in ~47s, leaving time for the shift report
-	desk.first_kind = "network"  # Days 4-5: open on a network ticket: command prompt, then the fix step
+	desk.first_kind = "network"  # Days 4-6: open on a network ticket: diagnose, fix, then verify
 	desk.start(7)
 	_auto = true
 	_step_t = READ_TIME
@@ -76,9 +76,11 @@ func _process(delta: float) -> void:
 		desk.next_ticket()
 		_typing.clear()
 		_step_t = READ_TIME
-	elif desk.current.has("term") and not desk.current.get("demo_typed", false):
-		desk.current.demo_typed = true  # Day 4: investigate network tickets in the command prompt
+	elif desk.current.has("term") and desk.current.get("term_live", true) and desk.current.get("demo_typed", 0) != desk.current.get("step_no", 1):
+		desk.current.demo_typed = desk.current.get("step_no", 1)  # Day 4: investigate in the command prompt
 		_typing = ["ipconfig", "ping 1.1.1.1", "nslookup google.com"]
+		if desk.current.get("step_no", 1) > 1:  # Day 6: the verify step: prove the fix from the PC
+			_typing = ["ipconfig /renew", "ping 1.1.1.1"] if desk.current.term.fault == "renew" else ["nslookup google.com", "ping 1.1.1.1"]
 		_typed = ""
 		_step_t = 0.3
 	elif not _typing.is_empty():

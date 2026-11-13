@@ -1,5 +1,10 @@
 # Changelog
 
+## Day 6 — 2026-11-14
+- Prove it's fixed: "The internet is down!" tickets now have a third step. After the fix, you're back on the user's command prompt and must pick the test result that proves the network really works
+- Only the test that failed before counts: a reply from the router or DC01 proved nothing while it was broken. After a DHCP fix the PC keeps its old 169.254 address until you run ipconfig /renew
+- Each of the three steps pays, and a wrong call on any of them still escalates the ticket
+
 ## Day 5 — 2026-11-13
 - Find it, then fix it: "The internet is down!" tickets now have two steps. Diagnose the fault in the command prompt, then remote onto the server or router and pick the right fix
 - Each step pays, but a wrong fix still escalates the ticket. Was it a dead DNS forwarder or a new firewall rule? A stopped DHCP service or one that was never authorised? An ISP outage or a modem with no power?

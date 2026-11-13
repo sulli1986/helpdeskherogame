@@ -2,7 +2,9 @@ extends RefCounted
 ## Simulated Windows command prompt for network tickets: the tech is on the phone and the user types
 ## what they're told. run(line, net) returns what cmd.exe would print for one command on that PC.
 ## `net` comes from tickets.gd _make_network: fault ("dns" | "wan" | "dhcp"), ip, gw, dc, dns_name,
-## domain, host, isp_hop, ms. Supports ipconfig (/all /renew /flushdns /release), ping, nslookup <name> [server], tracert.
+## domain, host, isp_hop, ms, lease_ip. After the fix step the fault becomes "ok" (healed), or "renew" for
+## DHCP: the server is fixed but this PC keeps its 169.254 address until ipconfig /renew (run() then
+## updates `net` to "ok" with the new lease). Supports ipconfig (/all /renew /flushdns /release), ping, nslookup <name> [server], tracert.
 
 const NOT_FOUND := "'%s' is not recognized as an internal or external command,\noperable program or batch file."
 
@@ -51,7 +53,7 @@ static func run(line: String, net: Dictionary) -> String:
 
 # ------------------------------------------------------------------ ipconfig
 static func _ipconfig(net: Dictionary, sw: Array) -> String:
-	var dhcp_down: bool = net.fault == "dhcp"
+	var dhcp_down := _no_lease(net)
 	for w in sw:
 		if not w in ["all", "renew", "flushdns", "release"]:
 			return "Error: unrecognized or incomplete command line."
@@ -59,7 +61,11 @@ static func _ipconfig(net: Dictionary, sw: Array) -> String:
 		return "(Better not: releasing the lease would cut this PC off mid-call. Try ipconfig /renew.)"
 	if "flushdns" in sw:
 		return "Windows IP Configuration\n\nSuccessfully flushed the DNS Resolver Cache."
-	if "renew" in sw and dhcp_down:
+	if "renew" in sw and net.fault == "renew":  # the DHCP server answers again: take the new lease
+		net.fault = "ok"
+		net.ip = net.lease_ip
+		dhcp_down = false
+	elif "renew" in sw and dhcp_down:
 		return "Windows IP Configuration\n\nAn error occurred while renewing interface Ethernet : unable to contact your DHCP server. Request has timed out."
 	var all := "all" in sw
 	var s := "Windows IP Configuration\n\n"
@@ -88,11 +94,16 @@ static func _resolve(net: Dictionary, target: String) -> String:
 		return target
 	if target == "localhost":
 		return "127.0.0.1"
-	if net.fault == "dhcp":
+	if _no_lease(net):
 		return ""  # no lease, so no DNS server configured
 	if _fqdn(net, target) != "":
 		return net.dc  # the DC answers for its own zone even when forwarding is broken
-	return ""  # every fault in this ticket breaks external names
+	return _public_ip(target) if net.fault == "ok" else ""  # every fault in this ticket breaks external names
+
+
+## No DHCP lease on this PC (169.254 address, no gateway or DNS server).
+static func _no_lease(net: Dictionary) -> bool:
+	return net.fault == "dhcp" or net.fault == "renew"
 
 
 ## The DC's full name if target names it (short name, FQDN or the AD domain), else "".
@@ -110,7 +121,7 @@ static func _public_ip(name: String) -> String:
 static func _where(net: Dictionary, ip: String) -> String:
 	if ip.begins_with("127."):
 		return "self"
-	if net.fault == "dhcp":
+	if _no_lease(net):
 		if ip == net.ip:
 			return "self"
 		return "lan_missing" if ip.begins_with("169.254.") else "noroute"
@@ -167,7 +178,7 @@ static func _nslookup(net: Dictionary, args: Array) -> String:
 		server = ""  # asking the DC explicitly is the same as the default
 	if server != "":
 		return _nslookup_public(net, target, server)
-	if net.fault == "dhcp":
+	if _no_lease(net):
 		return "*** Default servers are not available\nServer:  UnKnown\nAddress:  127.0.0.1\n\n*** UnKnown can't find %s: No response from server" % target
 	var s := "Server:  %s\nAddress:  %s\n\n" % [net.dns_name, net.dc]
 	if target == net.dc:  # reverse lookup of the DC itself
@@ -178,6 +189,11 @@ static func _nslookup(net: Dictionary, args: Array) -> String:
 		return s + "Name:    %s\nAddress:  %s" % [_fqdn(net, target), net.dc]
 	if net.fault == "wan":
 		return s + "DNS request timed out.\n    timeout was 2 seconds.\n*** Request to %s timed-out" % net.dns_name
+	if net.fault == "ok":
+		if target.is_valid_ip_address():  # reverse lookup of a public address
+			var ptr: String = {"1.1.1.1": "one.one.one.one", "8.8.8.8": "dns.google"}.get(target, "")
+			return s + ("Non-authoritative answer:\nName:    %s\nAddress:  %s" % [ptr, target] if ptr != "" else "*** %s can't find %s: Non-existent domain" % [net.dns_name, target])
+		return s + "Non-authoritative answer:\nName:    %s\nAddress:  %s" % [target, _public_ip(target)]
 	return s + "*** %s can't find %s: Server failed" % [net.dns_name, target]
 
 
@@ -188,7 +204,7 @@ static func _nslookup_public(net: Dictionary, target: String, server: String) ->
 		if ip == "":
 			return "*** Can't find address for server %s: Server failed" % server
 		return "DNS request timed out.\n    timeout was 2 seconds.\nServer:  UnKnown\nAddress:  %s\n\nDNS request timed out.\n    timeout was 2 seconds.\n*** Request to UnKnown timed-out" % ip
-	if net.fault != "dns":  # WAN down (or no route): nothing outside answers
+	if net.fault != "dns" and net.fault != "ok":  # WAN down (or no route): nothing outside answers
 		return "DNS request timed out.\n    timeout was 2 seconds.\nServer:  UnKnown\nAddress:  %s\n\nDNS request timed out.\n    timeout was 2 seconds.\n*** Request to UnKnown timed-out" % ip
 	var s := "Server:  UnKnown\nAddress:  %s\n\n" % ip
 	if target.is_valid_ip_address() or _fqdn(net, target) != "":

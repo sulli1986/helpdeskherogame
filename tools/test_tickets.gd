@@ -83,6 +83,17 @@ func _check(kind: String, t: Dictionary) -> void:
 			if "%s" in out or "%d" in out:
 				_fail(kind, "unfilled placeholder in terminal output for '%s'" % cmd)
 			text += " " + out.to_lower()
+		for st in t.get("steps", []):  # a verify step heals the network: the proving tests must pass
+			if st.has("term_fault"):
+				var net: Dictionary = t.term.duplicate()
+				net.fault = st.term_fault
+				for cmd in COMMANDS:
+					if Terminal.run(cmd, net.duplicate()).strip_edges() == "":
+						_fail(kind, "healed terminal printed nothing for '%s'" % cmd)
+				Terminal.run("ipconfig /renew", net)
+				var proof: String = Terminal.run("nslookup google.com", net) + Terminal.run("ping 1.1.1.1", net) + Terminal.run("tracert 1.1.1.1", net)
+				if net.fault != "ok" or "169.254" in Terminal.run("ipconfig", net) or "failed" in proof or "timed out" in proof.to_lower():
+					_fail(kind, "network still broken after the fix (%s)" % st.term_fault)
 	for b in BANNED:
 		if b in text:
 			_fail(kind, "region-specific term '%s'" % b)

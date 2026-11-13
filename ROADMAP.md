@@ -14,7 +14,8 @@ one day in three; the other days build things like the items in "Mechanics" belo
 ## Mechanics (take these first)
 - [x] Virtual PC terminal, step 1: on network tickets, the evidence starts hidden and the player types real commands (ipconfig, ping, nslookup, tracert) into a simulated command prompt to reveal it. Unknown commands get a realistic error
 - [x] Multi-step tickets, step 1: network tickets are diagnose, then fix (the fix step reveals server/router evidence), paying for each step
-- [ ] Multi-step tickets, step 2: add a verify step (after the fix the command prompt shows the healed network; the player runs the test that proves it) and make printer tickets multi-step too
+- [x] Multi-step tickets, step 2: add a verify step (after the fix the command prompt shows the healed network; the player runs the test that proves it)
+- [ ] Multi-step tickets, step 3: make printer tickets multi-step too (diagnose the queue/driver/network fault, then fix it on the print server)
 - [ ] Admin console, step 1: a mock user-admin panel (account status, MFA methods, sessions, mailbox rules) where the player fixes lockout/MFA tickets by clicking the right actions in the right order, instead of picking one option
 - [ ] Requirements gathering: project/new-starter tickets where the client's request is vague; pick which questions to ask (limited budget of questions), then spec the solution from the answers
 - [ ] Incident checklist: put containment/recovery steps in the right order (drag or number them); used by the ransomware event

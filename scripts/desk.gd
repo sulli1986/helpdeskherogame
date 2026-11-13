@@ -17,7 +17,7 @@ const PAY := {1: 300, 2: 200, 3: 120, 4: 80}
 const REP_WRONG := 8.0
 const REP_BREACH := 12.0
 const REP_RIGHT := 2.0
-const STEP_PAY := 0.75                 # multi-step tickets: each step pays this share of the ticket's pay
+const STEP_PAY := 0.5                  # multi-step tickets: each step pays this share of the ticket's pay
 const MAX_QUEUE := 8
 ## Commands offered as tap-to-run buttons under the prompt on touchscreens.
 const TERM_CHIPS := ["ipconfig", "ping 192.168.1.1", "ping 1.1.1.1", "nslookup google.com", "tracert 1.1.1.1",
@@ -200,6 +200,9 @@ func _advance_step(t: Dictionary) -> void:
 	t.step_no = t.get("step_no", 1) + 1
 	t.step_name = st.name
 	t.info += st.info_add
+	t.term_live = st.get("live", false)  # this step reopens the command prompt
+	if st.has("term_fault"):
+		t.term.fault = st.term_fault
 	for k in ["question", "options", "answer", "explain"]:
 		t[k] = st[k]
 	(t.row.get_meta("subject") as Label).text = "%s  (step %d: %s)" % [t.subject, t.step_no, st.name]
@@ -276,7 +279,7 @@ func _breach(t: Dictionary) -> void:
 		_feedback.visible = true
 		_scroll_to_feedback()
 	elif t.id == current.get("id", -1):  # breached between steps: the next step is gone
-		_feedback_label.text = "SLA breached before the fix. The client escalated to their account manager."
+		_feedback_label.text = "SLA breached before you finished. The client escalated to their account manager."
 		_next_btn.text = _next_hint()
 		_feedback.add_theme_stylebox_override("panel", UI.box(UI.BAD.darkened(0.6), 8, 14))
 	_remove(t)
@@ -356,7 +359,7 @@ func _show_ticket(t: Dictionary) -> void:
 	_info_title.text = t.info_title
 	_info.text = t.info
 	_size_console()
-	var live_term: bool = t.has("term") and t.get("step_no", 1) == 1  # later steps: the console is evidence only
+	var live_term: bool = t.has("term") and t.get("term_live", true)  # the fix step: the console is evidence only
 	_term_row.visible = live_term
 	_chip_scroll.visible = live_term and _touch
 	_chip_scroll.scroll_horizontal = 0
@@ -388,7 +391,7 @@ func _show_ticket(t: Dictionary) -> void:
 
 ## Run a command in the open ticket's simulated command prompt and append the output.
 func run_command(line: String) -> void:
-	if current.is_empty() or not current.has("term") or not running or _answered or current.get("step_no", 1) > 1:
+	if current.is_empty() or not current.has("term") or not running or _answered or not current.get("term_live", true):
 		return
 	line = line.strip_edges()
 	_term_input.text = ""

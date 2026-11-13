@@ -6,7 +6,8 @@ extends RefCounted
 ##   Optional: term + prompt (a simulated command prompt the player types into; see terminal.gd)
 ##   Optional: steps (Array of later steps on the same ticket, each with name, info_add, question,
 ##   options, answer, explain). The top-level question is step 1; info_add is appended to the evidence
-##   when that step opens. Each step pays out; a wrong step escalates the ticket.
+##   when that step opens. Each step pays out; a wrong step escalates the ticket. A step with
+##   live = true reopens the command prompt; term_fault (if set) changes what the PC sees first.
 ## New ticket types: add a _make_<kind>() and list it in KINDS. Keep answers technically right;
 ## the players are often real IT people.
 
@@ -199,6 +200,7 @@ func _make_network(c: Dictionary) -> Dictionary:
 		"fault": fault, "ip": ip, "gw": "192.168.1.1", "dc": "192.168.1.10",
 		"dns_name": "dc01.%s" % c.domain, "domain": c.domain, "host": host,
 		"isp_hop": "100.64.%d.1" % rng.randi_range(0, 63), "ms": rng.randi_range(8, 24),
+		"lease_ip": "192.168.1.%d" % rng.randi_range(50, 199),  # what ipconfig /renew gets once DHCP is fixed
 	}
 	return {
 		"priority": 1,
@@ -220,7 +222,7 @@ func _make_network(c: Dictionary) -> Dictionary:
 			"The gateway replies but nothing past it does: ping 1.1.1.1 times out and tracert dies after hop 1. Names fail too, only because the DNS server can't reach the internet either. It's the WAN link. Next: find out why.",
 			"ipconfig shows a 169.254 address with no gateway, and renewing the lease can't reach a DHCP server: the PC has no lease. Next: find out why the DHCP server isn't answering."][v],
 		"step_name": "Diagnose",
-		"steps": [_network_fix(fault, term, c.first)],
+		"steps": [_network_fix(fault, term, c.first), _network_verify(fault, c.first)],
 	}
 
 
@@ -278,6 +280,49 @@ func _network_fix(fault: String, term: Dictionary, first: String) -> Dictionary:
 		"options": options,
 		"answer": sub,
 		"explain": explain,
+	}
+
+
+## Step 3 of a network ticket: back on the PC's command prompt (now healed), prove the fix worked.
+## The proof is the test that failed before; the wrong options all passed while it was still broken.
+func _network_verify(fault: String, first: String) -> Dictionary:
+	var options: Array = []
+	var explain := ""
+	match fault:
+		"dns":
+			options = [
+				"nslookup google.com now gets an answer from DC01",
+				"ping 1.1.1.1 replies",
+				"nslookup google.com 8.8.8.8 answers",
+				"ping dc01 replies",
+			]
+			explain = "The test that failed before has to pass now: DC01 itself resolving an outside name. Pinging 1.1.1.1, asking 8.8.8.8 and pinging DC01 all worked while it was broken, so they prove nothing. nslookup asks DC01 directly, so a stale entry in the PC's own cache can't mislead you."
+		"wan":
+			options = [
+				"ping 1.1.1.1 replies and tracert gets past the gateway",
+				"ping 192.168.1.1 (the router) replies and nslookup dc01 answers",
+				"tracert dc01 completes",
+				"ipconfig shows a 192.168.1.x address and a gateway",
+			]
+			explain = "The link was the fault, so prove traffic gets past the router: an outside address replies and tracert goes beyond hop 1. The router, DC01 and the PC's address all worked during the outage."
+		_:  # dhcp
+			options = [
+				"After ipconfig /renew: a 192.168.1.x lease with a gateway, and ping 1.1.1.1 replies",
+				"ipconfig still shows 169.254: the fix didn't work, escalate it",
+				"DC01's DHCP Server service shows Running and the scope has free addresses",
+				"ping 127.0.0.1 replies",
+			]
+			explain = "The PC keeps its 169.254 address until it asks again (Windows retries every few minutes), so have them run ipconfig /renew. A real lease with a gateway, then a reply from outside, proves clients get addresses. The service and scope status don't prove that, and loopback answers even with no network."
+	return {
+		"name": "Verify",
+		"info_add": "\n--- %s Back on the phone with %s: prove it from their PC before you close it ---\n" % [
+			"Later: the internet link is back up." if fault == "wan" else "Fix applied on DC01.", first],
+		"question": "Which result proves it's fixed?",
+		"options": options,
+		"answer": 0,
+		"explain": explain,
+		"live": true,
+		"term_fault": "renew" if fault == "dhcp" else "ok",
 	}
 
 
