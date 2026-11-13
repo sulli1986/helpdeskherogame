@@ -78,6 +78,10 @@ var _toast_t := 0.0
 var _sound_btn: Button
 var _brand: Label
 var _top_row: HBoxContainer
+var _compact := false          # phone portrait: queue and ticket are separate screens
+var _view_queue := false       # compact only: showing the queue screen rather than the ticket
+var _back: Button              # compact only: "< Queue (n)" above the ticket
+var _next_btn: Button          # under the result: next ticket / next step
 
 
 func _ready() -> void:
@@ -247,7 +251,7 @@ func _spawn() -> void:
 	t.row = _make_row(t)
 	queue.append(t)
 	_queue_list.add_child(t.row)
-	_queue_head.text = "Queue (%d)" % queue.size()
+	_update_queue_count()
 	_sfx("new")
 	if current.is_empty() and not _answered:
 		_show_ticket(t)
@@ -266,12 +270,14 @@ func _breach(t: Dictionary) -> void:
 		_term_input.focus_mode = Control.FOCUS_NONE
 		for chip in _term_chips.get_children():
 			chip.disabled = true
-		_feedback_label.text = "SLA breached. The client escalated to their account manager.\n\n%s\n\n%s" % [t.explain, _next_hint()]
+		_feedback_label.text = "SLA breached. The client escalated to their account manager.\n\n%s" % t.explain
+		_next_btn.text = _next_hint()
 		_feedback.add_theme_stylebox_override("panel", UI.box(UI.BAD.darkened(0.6), 8, 14))
 		_feedback.visible = true
 		_scroll_to_feedback()
 	elif t.id == current.get("id", -1):  # breached between steps: the next step is gone
-		_feedback_label.text = "SLA breached before the fix. The client escalated to their account manager.\n\n%s" % _next_hint()
+		_feedback_label.text = "SLA breached before the fix. The client escalated to their account manager."
+		_next_btn.text = _next_hint()
 		_feedback.add_theme_stylebox_override("panel", UI.box(UI.BAD.darkened(0.6), 8, 14))
 	_remove(t)
 
@@ -280,7 +286,7 @@ func _remove(t: Dictionary) -> void:
 	queue.erase(t)
 	if is_instance_valid(t.row):
 		t.row.queue_free()
-	_queue_head.text = "Queue (%d)" % queue.size()
+	_update_queue_count()
 
 
 func _most_urgent() -> Dictionary:
@@ -304,10 +310,31 @@ func _end(reason: String) -> void:
 
 
 # ------------------------------------------------------------------ view
+func _update_queue_count() -> void:
+	_queue_head.text = "Queue (%d)%s" % [queue.size(), "  ·  tap a ticket to open it" if _compact else ""]
+	_back.text = "‹  Queue (%d)" % queue.size()
+
+
+## Phones: show the queue or the ticket full-screen. Wider screens show both side by side.
+func _apply_view() -> void:
+	_queue_panel.visible = not _compact or _view_queue
+	_detail_panel.visible = not _compact or not _view_queue
+	_back.visible = _compact
+	_update_queue_count()
+
+
+func show_queue() -> void:
+	_view_queue = true
+	_apply_view()
+
+
 func _show_ticket(t: Dictionary) -> void:
 	current = t
 	_answered = false
 	_feedback.visible = false
+	if not t.is_empty() or queue.is_empty():
+		_view_queue = false
+		_apply_view()
 	for row in _queue_list.get_children():
 		row.add_theme_stylebox_override("panel", UI.box(UI.ROW, 6, 10))
 	if t.is_empty():
@@ -431,17 +458,16 @@ func _show_feedback(ok: bool, pay: int, more := false) -> void:
 	var head := ("Resolved. +$%d" % pay) if ok else "Wrong call. Escalated to Tier 2."
 	if more:
 		head = "%s: right. +$%d" % [current.step_name, pay]
-	var hint := _next_hint()
-	if more:
-		hint = "Tap here or press Enter for the next step" if _touch else "Enter: next step"
-	_feedback_label.text = "%s\n\n%s\n\n%s" % [head, current.explain, hint]
+	_feedback_label.text = "%s\n\n%s" % [head, current.explain]
+	_next_btn.text = _next_hint(more)
 	_feedback.add_theme_stylebox_override("panel", UI.box((UI.GOOD if ok else UI.BAD).darkened(0.6), 8, 14))
 	_feedback.visible = true
 	_scroll_to_feedback()
 
 
-func _next_hint() -> String:
-	return "Tap here or press Enter for the next ticket" if _touch else "Enter: next ticket"
+func _next_hint(step := false) -> String:
+	var what := "Next step" if step else "Next ticket"
+	return "%s  ›" % what if _touch else "%s  ›   (Enter)" % what
 
 
 func _scroll_to_feedback() -> void:
@@ -482,8 +508,12 @@ func _make_row(t: Dictionary) -> PanelContainer:
 	row.mouse_filter = Control.MOUSE_FILTER_STOP
 	row.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 	row.gui_input.connect(func(e: InputEvent) -> void:
-		if e is InputEventMouseButton and e.pressed and e.button_index == MOUSE_BUTTON_LEFT and running:
-			open_ticket(t))
+		# Open on a tap/click (press and release in the same place), so a drag can scroll the list.
+		if e is InputEventMouseButton and e.button_index == MOUSE_BUTTON_LEFT:
+			if e.pressed:
+				row.set_meta("press_at", e.global_position)
+			elif running and e.global_position.distance_to(row.get_meta("press_at", Vector2.INF)) < 12.0:
+				open_ticket(t))
 	var v := VBoxContainer.new()
 	v.add_theme_constant_override("separation", 3)
 	v.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -581,9 +611,21 @@ func _build() -> void:
 	_detail_panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_detail_panel.add_theme_stylebox_override("panel", UI.box(UI.PANEL, 8, 16))
 	_layout.add_child(_detail_panel)
+	var dcol := VBoxContainer.new()
+	dcol.add_theme_constant_override("separation", 8)
+	_detail_panel.add_child(dcol)
+	_back = Button.new()
+	_back.focus_mode = Control.FOCUS_NONE
+	_back.alignment = HORIZONTAL_ALIGNMENT_LEFT
+	_back.custom_minimum_size = Vector2(0, 44)
+	_back.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+	_back.pressed.connect(show_queue)
+	_back.visible = false
+	dcol.add_child(_back)
 	var dscroll := ScrollContainer.new()
 	dscroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	_detail_panel.add_child(dscroll)
+	dscroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	dcol.add_child(dscroll)
 	_dscroll = dscroll
 	var dwrap := VBoxContainer.new()
 	dwrap.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -598,7 +640,7 @@ func _build() -> void:
 	_detail.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	dwrap.add_child(_detail)
 	_subject = UI.wrap(UI.label(_detail, "", 22, UI.TEXT))  # long subjects ran off phone screens
-	_meta = UI.label(_detail, "", 14, UI.MUTED)
+	_meta = UI.wrap(UI.label(_detail, "", 14, UI.MUTED))
 	_body = UI.wrap(UI.label(_detail, "", 16, UI.TEXT))
 	_info_title = UI.label(_detail, "", 13, UI.MUTED)
 	var info_box := PanelContainer.new()
@@ -652,7 +694,16 @@ func _build() -> void:
 	_feedback = PanelContainer.new()
 	_feedback.visible = false
 	_detail.add_child(_feedback)
-	_feedback_label = UI.wrap(UI.label(_feedback, "", 15, UI.TEXT))
+	var fcol := VBoxContainer.new()
+	fcol.add_theme_constant_override("separation", 10)
+	fcol.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_feedback.add_child(fcol)
+	_feedback_label = UI.wrap(UI.label(fcol, "", 15, UI.TEXT))
+	_next_btn = Button.new()
+	_next_btn.focus_mode = Control.FOCUS_NONE
+	_next_btn.custom_minimum_size = Vector2(0, 50)
+	_next_btn.pressed.connect(next_ticket)
+	fcol.add_child(_next_btn)
 	_feedback.mouse_filter = Control.MOUSE_FILTER_STOP
 	_feedback.gui_input.connect(func(e: InputEvent) -> void:
 		# Advance on a tap/click, not on a press that turns into a scroll (or a mouse wheel).
@@ -686,9 +737,11 @@ func _relayout() -> void:
 	_rep_bar.custom_minimum_size.x = 110.0 if vp.x >= 640 else 64.0  # keep the Sound button on screen
 	_size_console()
 	_toast.position.y = 58.0 if portrait else 6.0  # below the top bar in portrait, in its middle otherwise
-	if portrait:
-		_queue_panel.custom_minimum_size = Vector2(0, vp.y * 0.21)  # room for two and a bit tickets
-		_queue_panel.size_flags_vertical = Control.SIZE_FILL
+	_compact = portrait
+	_apply_view()
+	if portrait:  # full-screen queue (see _apply_view)
+		_queue_panel.custom_minimum_size = Vector2.ZERO
+		_queue_panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	else:
 		_queue_panel.custom_minimum_size = Vector2(minf(380.0, size.x * 0.34), 0)
 		_queue_panel.size_flags_vertical = Control.SIZE_EXPAND_FILL

@@ -63,6 +63,8 @@ func _ready() -> void:
 		_logged_in = false
 		title.show_logged_out())
 
+	add_child(preload("res://scripts/touch_scroll.gd").new())  # drag-to-scroll anywhere on phones
+
 	sfx = preload("res://scripts/sfx.gd").new()
 	sfx.name = "Sfx"
 	add_child(sfx)

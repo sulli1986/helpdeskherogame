@@ -7,6 +7,7 @@ Godot 4.5 web game: an MSP helpdesk sim, hosted on bunny.net. Every day an agent
 - `scripts/title.gd` — title screen: login/register/guest, career line, leaderboard
 - `scripts/desk.gd` — a shift: queue, SLA timers, ticket view, answering, scoring, reputation
 - `scripts/tickets.gd` — ticket generator; one `_make_<kind>()` per ticket type, listed in `KINDS`
+- `scripts/touch_scroll.gd` — drag-to-scroll anywhere on touchscreens (ScrollContainer alone only scrolls from empty space); a drag cancels the press it started on, so tappable things in scroll areas must act on release (Buttons do)
 - `scripts/ui.gd` — colours, theme and small UI builders (static)
 - `scripts/whats_new.gd` — in-game changelog panel (V)
 - `scripts/demo.gd` — autopilot for the daily promo clip (`-- --demo`), portrait 720x1280
