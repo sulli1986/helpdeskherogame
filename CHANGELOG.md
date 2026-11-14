@@ -1,5 +1,10 @@
 # Changelog
 
+## Day 7 — 2026-11-15
+- Printers get a proper diagnosis: "Printer not printing" tickets now have two steps. First work out whether it's the print queue, the network or the printer itself, then pick the fix
+- Read the clues: does the printer answer ping? Is its web page reachable? Then open the queue, check the switch and DHCP leases, or get the user to read the control panel
+- Stuck job or paused queue? New IP address or an unplugged cable? Out of toner or a fuser fault for the vendor? Each step pays, and a wrong call still escalates the ticket
+
 ## Day 6 — 2026-11-14
 - Prove it's fixed: "The internet is down!" tickets now have a third step. After the fix, you're back on the user's command prompt and must pick the test result that proves the network really works
 - Only the test that failed before counts: a reply from the router or DC01 proved nothing while it was broken. After a DHCP fix the PC keeps its old 169.254 address until you run ipconfig /renew

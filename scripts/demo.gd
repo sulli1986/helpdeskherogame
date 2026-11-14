@@ -53,7 +53,7 @@ func _start_shift() -> void:
 	main.summary.visible = false
 	desk.spawn_scale = 2.4
 	desk.clock_scale = 9.0   # 8am to 5pm in ~47s, leaving time for the shift report
-	desk.first_kind = "network"  # Days 4-6: open on a network ticket: diagnose, fix, then verify
+	desk.first_kind = "printer"  # Day 7: open on a printer ticket: diagnose, then fix
 	desk.start(7)
 	_auto = true
 	_step_t = READ_TIME

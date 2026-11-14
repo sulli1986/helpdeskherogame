@@ -156,34 +156,101 @@ func _make_share(c: Dictionary) -> Dictionary:
 
 
 # ---------------------------------------------------------------- printer
+## Two steps: from the outside (ping, web page, queue) work out whether the fault is the print queue,
+## the network path to the printer, or the printer itself; then the fix step shows the detail.
 func _make_printer(c: Dictionary) -> Dictionary:
 	var v := rng.randi() % 3
+	var fault: String = ["queue", "network", "device"][v]
 	var mfp := "MFP-%s" % _pick(["RECEPTION", "LEVEL1", "ACCOUNTS"])
-	var info := ""
-	match v:
-		0:
-			info = "Printer:     %s (online, ping OK)\nQueue:       %d jobs, status \"Error - Printing\"\nSpooler:     Running\nEvent 372:   Document failed to print, spooler stuck" % [mfp, rng.randi_range(12, 60)]
-		1:
-			info = "Printer:     %s on port IP_192.168.10.50\nping .50:    Request timed out\nDHCP leases: %s  MAC 00:1B:A9:..  ->  192.168.10.%d" % [mfp, mfp, rng.randi_range(70, 140)]
+	var p := {"mfp": mfp, "ip": "192.168.10.50", "jobs": rng.randi_range(12, 60),
+		"mins": rng.randi_range(20, 55), "users": rng.randi_range(5, 14)}
+	var info := "Affected:      all %d people who print to %s\nQueue PRINT01: %s, %d jobs waiting, the oldest for %d min\n" % [p.users, mfp, mfp, p.jobs, p.mins]
+	match fault:
+		"queue":
+			info += "Ping:          %s replies (from PRINT01)\nWeb page:      Ready. No errors. Last job received: yesterday 17:05" % p.ip
+		"network":
+			info += "Ping:          %s timed out (from PRINT01)\nWeb page:      http://%s can't be reached\nOn the phone:  %s: \"It's switched on and the screen says Ready.\"" % [p.ip, p.ip, c.first]
 		_:
-			info = "Printer:     %s (online, ping OK)\nQueue:       empty\nPanel:       \"Replace black toner cartridge (0%%)\"\nPage count:  %d" % [mfp, rng.randi_range(40000, 90000)]
+			info += "Ping:          %s replies (from PRINT01)\nWeb page:      Status: Error. Check the control panel. 1 job held at the printer" % p.ip
 	return {
 		"priority": 3,
 		"subject": "Printer not printing",
 		"body": "%s: \"Nothing's coming out of the printer and accounts need invoices out today.\"" % c.first,
-		"info_title": "Diagnostics",
+		"info_title": "Diagnostics: %s, shared from PRINT01" % mfp,
 		"info": info,
-		"question": "Fix?",
+		"question": "Where's the fault?",
 		"options": [
-			"Clear the queue and restart the Print Spooler service",
-			"Point the port at the new IP and add a DHCP reservation",
-			"Order toner on the managed print contract",
-			"Reinstall the printer driver on every PC",
+			"The print queue on PRINT01 is stuck; the printer and network are fine",
+			"The network: PRINT01 can't reach the printer",
+			"The printer itself: it's reporting a fault",
+			"%s's PC: reinstall the printer driver on it" % c.first,
 		],
 		"answer": v,
-		"explain": ["Stuck spooler with a full queue: clear it and restart the service.",
-			"The printer picked up a new DHCP address. Fix the port, then reserve the IP so it doesn't move again.",
-			"It's just out of toner. Order it on the contract; no technical fix needed."][v],
+		"explain": ["The printer answers ping and its web page says Ready with nothing received since yesterday, so the jobs are stuck on the server. It isn't one PC: everyone is affected. Next: open the queue on PRINT01.",
+			"PRINT01 can't ping the printer or load its web page, yet it's switched on and Ready, so the path between them is broken. It isn't one PC: everyone is affected. Next: find out why.",
+			"The printer is on the network and took the job, but its own status says Error and it's holding it, so the fault is in the printer. Next: read the control panel."][v],
+		"step_name": "Diagnose",
+		"steps": [_printer_fix(fault, p, c.first)],
+	}
+
+
+## Step 2 of a printer ticket: the detail behind the fault, and the fix.
+func _printer_fix(fault: String, p: Dictionary, first: String) -> Dictionary:
+	var sub := rng.randi() % 2
+	var info := ""
+	var options: Array = []
+	var explain := ""
+	var where := "You open the queue on PRINT01"
+	match fault:
+		"queue":
+			options = [
+				"Cancel the stuck job; if it won't go, stop the Print Spooler, clear the spool folder and start it",
+				"Resume the paused printer queue",
+				"Power-cycle the printer",
+				"Change the printer port to a new IP address",
+			]
+			if sub == 0:
+				info = "Queue status:  Printing\nJob 1:         Invoices_Q3.pdf  (%d MB)  Error - Printing   submitted %d min ago\nJobs 2-%d:     Waiting behind job 1\nPrintService/Admin log, event 372: the document failed to print" % [rng.randi_range(300, 900), p.mins, p.jobs]
+				explain = "One huge job errored at the top of the queue and everything is waiting behind it. Cancel it; if it's stuck on \"Deleting\", stop the Print Spooler, clear C:\\Windows\\System32\\spool\\PRINTERS and start it again (that clears every queued job, so warn people). The printer is fine, so power-cycling it does nothing."
+			else:
+				info = "Queue status:  Paused\nJobs 1-%d:     Waiting\nChange log:    last night's maintenance paused %s to update its driver and didn't resume it" % [p.jobs, p.mfp]
+				explain = "The queue was paused for last night's driver update and never resumed, so Windows holds every job. Resume it (Print Management on PRINT01: right-click %s > Resume Printing). Restarting the spooler or the printer won't help: a paused queue stays paused." % p.mfp
+		"network":
+			options = [
+				"Point the printer port at its new IP and add a DHCP reservation",
+				"Get someone onsite to reseat or replace the printer's network cable",
+				"Clear the queue and restart the Print Spooler",
+				"Order a replacement printer",
+			]
+			where = "%s reads the printer's network settings off its control panel" % first
+			if sub == 0:
+				var new_ip := "192.168.10.%d" % rng.randi_range(70, 140)
+				info = "Printer panel: IP %s (DHCP), link up\nPRINT01 port:  IP_%s\nDHCP leases:   %s  ->  %s  (no reservation; leased this morning by the new firewall, which took over DHCP last week)\nPing:          %s replies (from PRINT01)" % [new_ip, p.ip, p.mfp, new_ip, new_ip]
+				explain = "DHCP moved to the new firewall last week. It has no record of the old lease, so when the printer's old lease ran out this morning it was given a different address, but the queue still sends to the old one. Point the port at the new IP and add a DHCP reservation so it can't move again. The cable is fine: the link is up and the new IP replies."
+			else:
+				info = "Printer panel: IP %s (static), network: no link\nSwitch:        port 14 (%s) down since 17:40 yesterday\nCall notes:    desks were moved around the printer last night" % [p.ip, p.mfp]
+				explain = "The printer still has the right IP, but it has no network link and its switch port went down while the desks were moved. Get someone onsite to check the cable is plugged in at both ends, or swap it. The IP didn't change, so editing the port won't help."
+		_:  # device
+			options = [
+				"Fit a spare toner if there's one onsite, otherwise order one on the print contract",
+				"Log a service call with the print vendor and move urgent jobs to another printer",
+				"Clear the queue and restart the Print Spooler",
+				"Reinstall the printer driver on PRINT01",
+			]
+			where = "%s reads the printer's control panel" % first
+			if sub == 0:
+				info = "Panel:         \"Replace black toner cartridge. Printing stopped\"\nToner levels:  black 0%%, cyan 64%%, magenta 58%%, yellow 71%%\nPage count:    %d" % rng.randi_range(40000, 90000)
+				explain = "It's out of black toner and has stopped. Fit a spare if there is one, otherwise order it on the contract. The queue will carry on by itself once there's toner; nothing on the server needs touching."
+			else:
+				info = "Panel:         \"Error E-542: fuser fault. Turn off and contact service\"\nOn the phone:  %s: \"I turned it off and on twice. It comes back during warm-up.\"\nContract:      on-site service included" % first
+				explain = "A fuser fault that returns after a power cycle is a hardware failure for the vendor's technician, and the service is covered by the contract. Log the call and move urgent jobs (the invoices) to another printer meanwhile. The server and drivers are fine."
+	return {
+		"name": "Fix",
+		"info_add": "\n--- %s ---\n%s\n" % [where, info],
+		"question": "How do you fix it?",
+		"options": options,
+		"answer": sub,
+		"explain": explain,
 	}
 
 
