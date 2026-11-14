@@ -75,7 +75,14 @@ jobs:
           test -x ~/godot/godot || { echo "Godot binary missing"; exit 1; }
           mkdir -p build/web
           ~/godot/godot --headless --import --quit || true
-          ~/godot/godot --headless --export-release "Web" build/web/index.html
+          # Export under a per-build name (game-<sha>.js/.wasm/.pck/...) so browsers can never pair a fresh
+          # page with yesterday's cached game files; only the HTML keeps a fixed name (index.html).
+          V=$(git rev-parse --short HEAD)
+          ~/godot/godot --headless --export-release "Web" "build/web/game-${V}.html"
+          mv "build/web/game-${V}.html" build/web/index.html
+          grep -q "game-${V}" build/web/index.html || { echo "::error::exported page doesn't reference game-${V}"; exit 1; }
+          # version.txt + a check in the page: a cached index.html reloads itself when a newer day is out.
+          python3 tools/version_check.py build/web "${V}"
           ls -la build/web
 
       - name: Upload to Bunny Storage
@@ -110,6 +117,7 @@ jobs:
               *.js)   ct=application/javascript ;;
               *.html) ct=text/html ;;
               *.png)  ct=image/png ;;
+              *.txt)  ct="text/plain; charset=utf-8" ;;
               *)      ct=application/octet-stream ;;
             esac
             echo "PUT $f"
@@ -130,6 +138,31 @@ jobs:
           bunny_put_dir build/web "days/day-${N}"
           python3 tools/days_index.py build/days/index.html
           bunny_put build/days/index.html days/index.html
+
+      - name: Remove old game files from the site root
+        continue-on-error: true
+        env:
+          ZONE: ${{ vars.BUNNY_STORAGE_ZONE || secrets.BUNNY_STORAGE_ZONE }}
+          HOST: ${{ vars.BUNNY_STORAGE_HOST || secrets.BUNNY_STORAGE_HOST }}
+          KEY: ${{ secrets.BUNNY_STORAGE_PASSWORD }}
+        run: |
+          . tools/bunny.sh; bunny_init
+          # Older builds' game-<sha>.* (and pre-versioning index.*) files, kept for a day so open tabs still load.
+          V=$(git rev-parse --short HEAD)
+          curl -sSf "https://${HOST}/${ZONE}/" -H "AccessKey: ${KEY}" | python3 -c '
+          import json, re, sys
+          from datetime import datetime, timedelta, timezone
+          keep, cutoff = sys.argv[1], datetime.now(timezone.utc) - timedelta(days=1)
+          for o in json.load(sys.stdin):
+              name = o.get("ObjectName", "")
+              if o.get("IsDirectory") or not re.match(r"^(game-[0-9a-f]+|index)\.", name) or name == "index.html":
+                  continue
+              if name.startswith(f"game-{keep}."):
+                  continue
+              changed = datetime.fromisoformat(o["LastChanged"][:19]).replace(tzinfo=timezone.utc)
+              if changed < cutoff:
+                  print(name)
+          ' "$V" | while read -r f; do echo "DELETE $f"; bunny_delete "$f"; done
 
       - name: Purge pull zone
         env:

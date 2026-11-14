@@ -92,7 +92,10 @@ jobs:
         run: |
           mkdir -p build/web
           ~/godot/godot --headless --import --quit || true
-          ~/godot/godot --headless --export-release "Web" build/web/index.html
+          # Per-build file names, as in deploy.yml, so a rebuilt day never mixes with cached files.
+          V=$(git rev-parse --short HEAD)
+          ~/godot/godot --headless --export-release "Web" "build/web/game-${V}.html"
+          mv "build/web/game-${V}.html" build/web/index.html
           ls -la build/web
 
       - name: Upload to /days/day-${{ matrix.day }}/

@@ -38,6 +38,11 @@ bunny_put_dir() {
   done
 }
 
+# bunny_delete REMOTE_PATH
+bunny_delete() {
+  curl -sSf --retry 3 -X DELETE "https://${HOST}/${ZONE}/$1" -H "AccessKey: ${KEY}" > /dev/null
+}
+
 # bunny_exists REMOTE_PATH  -> exit 0 if the object exists
 bunny_exists() {
   [ "$(curl -s -o /dev/null -w '%{http_code}' "https://${HOST}/${ZONE}/$1" -H "AccessKey: ${KEY}")" = "200" ]
