@@ -18,6 +18,7 @@ _bunny_ctype() {
     *.mp4)  echo video/mp4 ;;
     *.txt)  echo "text/plain; charset=utf-8" ;;
     *.json) echo application/json ;;
+    *.xml)  echo "application/xml; charset=utf-8" ;;
     *)      echo application/octet-stream ;;
   esac
 }

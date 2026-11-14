@@ -83,6 +83,8 @@ jobs:
           grep -q "game-${V}" build/web/index.html || { echo "::error::exported page doesn't reference game-${V}"; exit 1; }
           # version.txt + a check in the page: a cached index.html reloads itself when a newer day is out.
           python3 tools/version_check.py build/web "${V}"
+          # Search/share metadata in the page, plus robots.txt + sitemap.xml for the site root.
+          python3 tools/seo.py build/web build/site "${{ vars.GAME_URL }}"
           ls -la build/web
 
       - name: Upload to Bunny Storage
@@ -129,6 +131,7 @@ jobs:
         env:
           UMAMI_WEBSITE_ID: ${{ vars.UMAMI_WEBSITE_ID }}
           GA_MEASUREMENT_ID: ${{ vars.GA_MEASUREMENT_ID || 'G-LG9NEH229Y' }}
+          GAME_URL: ${{ vars.GAME_URL }}
           ZONE: ${{ vars.BUNNY_STORAGE_ZONE || secrets.BUNNY_STORAGE_ZONE }}
           HOST: ${{ vars.BUNNY_STORAGE_HOST || secrets.BUNNY_STORAGE_HOST }}
           KEY: ${{ secrets.BUNNY_STORAGE_PASSWORD }}
@@ -138,6 +141,7 @@ jobs:
           bunny_put_dir build/web "days/day-${N}"
           python3 tools/days_index.py build/days/index.html
           bunny_put build/days/index.html days/index.html
+          for f in build/site/*; do echo "PUT $(basename "$f")"; bunny_put "$f" "$(basename "$f")"; done
 
       - name: Remove old game files from the site root
         continue-on-error: true
@@ -241,6 +245,10 @@ jobs:
           put build/clip/clip.mp4    "latest.mp4"   video/mp4
           put build/clip/caption.txt "day-${N}.txt" "text/plain; charset=utf-8"
           put build/clip/caption.txt "latest.txt"   "text/plain; charset=utf-8"
+          # Link-preview image (og:image in the page): a mid-shift frame of today's clip on a 1200x630 card.
+          ffmpeg -loglevel error -y -ss 14 -i build/clip/clip.mp4 -frames:v 1 \
+            -vf "scale=-2:630,pad=1200:630:(ow-iw)/2:0:color=0x0b0f19" -q:v 3 build/clip/og.jpg \
+            && put build/clip/og.jpg "og.jpg" image/jpeg || echo "::warning::og.jpg not made"
           {
             echo "### 🎬 Day ${N} clip"
             echo "- Video: ${GAME_URL%/}/clips/day-${N}.mp4"

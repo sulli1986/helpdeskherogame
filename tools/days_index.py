@@ -30,9 +30,13 @@ import sys as _sys
 _sys.path.insert(0, str(Path(__file__).parent))
 from inject_analytics import tags as _analytics_tags
 umami = _analytics_tags()  # Umami and/or GA4, from env
+_site = os.environ.get("GAME_URL", "").strip().rstrip("/")
+canonical = f'<link rel="canonical" href="{html.escape(_site)}/days/">' if _site.startswith("https://") else ""
 page = f"""<!DOCTYPE html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Every day so far · Helpdesk Hero</title>
+<title>Every day so far · Helpdesk Hero, the IT helpdesk simulator</title>
+<meta name="description" content="Every daily update to Helpdesk Hero, a free IT helpdesk simulator game: what changed each day, a clip, and a playable copy of that day's build.">
+{canonical}
 {umami}
 <style>
 :root{{color-scheme:dark}}

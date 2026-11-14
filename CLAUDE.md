@@ -15,6 +15,7 @@ Godot 4.5 web game: an MSP helpdesk sim, hosted on bunny.net. Every day an agent
 - `api/edge-script.ts` — Bunny Edge Script (Deno) + Bunny Database
 - `.github/workflows/deploy.yml` — export + upload on push to `main`; archives the build to `/days/day-N/`, rebuilds `/days/index.html`, renders + posts the clip
 - `.github/workflows/backfill.yml` — manual: rebuild past days from git history, re-render/repost clips
+- `tools/seo.py` — page title/description/share tags, VideoGame schema, crawlable summary, robots.txt + sitemap.xml (keep its copy accurate when the game changes); `tools/version_check.py` — per-build cache busting (cached pages reload when a newer day is out)
 - `tools/test_tickets.gd` — ticket sanity test (structure, answer range, variety, no region-specific terms)
 - `tools/` — `bunny.sh` (storage helpers), `make_clip.sh`, `clip_text.py`, `clip_filter.py`, `post_clip.sh`, `days_index.py`, `day_commits.py`, `inject_demo.py`, `inject_analytics.py`
 
