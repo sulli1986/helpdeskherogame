@@ -30,6 +30,10 @@ import sys as _sys
 _sys.path.insert(0, str(Path(__file__).parent))
 from inject_analytics import tags as _analytics_tags
 umami = _analytics_tags()  # Umami and/or GA4, from env
+# Google AdSense: only on content pages like this one, never on the game screen (AdSense policy: no ads
+# on screens without publisher content). ads.txt for this publisher is written by seo.py.
+ADSENSE = ('<script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js'
+           '?client=ca-pub-1544955300869521" crossorigin="anonymous"></script>')
 _site = os.environ.get("GAME_URL", "").strip().rstrip("/")
 canonical = f'<link rel="canonical" href="{html.escape(_site)}/days/">' if _site.startswith("https://") else ""
 page = f"""<!DOCTYPE html>
@@ -38,6 +42,7 @@ page = f"""<!DOCTYPE html>
 <meta name="description" content="Every daily update to Helpdesk Hero, a free IT helpdesk simulator game: what changed each day, a clip, and a playable copy of that day's build.">
 {canonical}
 {umami}
+{ADSENSE}
 <style>
 :root{{color-scheme:dark}}
 body{{margin:0;font:16px/1.5 system-ui,sans-serif;background:#0b0f19;color:#e8ecf3}}

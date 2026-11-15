@@ -92,6 +92,8 @@ def main() -> None:
         (out / "sitemap.xml").write_text('<?xml version="1.0" encoding="UTF-8"?>\n'
                                          '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">%s</urlset>\n' % urls)
     (out / "robots.txt").write_text(robots)
+    # Authorises Google AdSense for this site (ads appear only on content pages, see days_index.py).
+    (out / "ads.txt").write_text("google.com, pub-1544955300869521, DIRECT, f08c47fec0942fa0\n")
     print("seo: %s, site=%s" % (page, site or "(none)"))
 
 

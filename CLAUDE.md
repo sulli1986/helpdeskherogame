@@ -34,6 +34,7 @@ Godot 4.5 web game: an MSP helpdesk sim, hosted on bunny.net. Every day an agent
 10. Commit to `main` with message `Day N: <change>` and push. CI deploys.
 
 ## Don't
+- Google AdSense (`ca-pub-1544955300869521`) loads only on content pages (`/days/index.html` via `tools/days_index.py`); `tools/seo.py` writes `ads.txt`. Never put AdSense on the game screen (policy: no ads on screens without publisher content).
 - Don't commit secrets. Bunny keys live in GitHub secrets/vars only.
 - Don't break old saves: older day builds share the database and send no newer fields; the server ignores out-of-order saves via `seq`.
 - Don't rewrite large files for style. Don't change controls without updating the title screen's "How to play" line.
