@@ -16,11 +16,12 @@ one day in three; the other days build things like the items in "Mechanics" belo
 - [x] Multi-step tickets, step 1: network tickets are diagnose, then fix (the fix step reveals server/router evidence), paying for each step
 - [x] Multi-step tickets, step 2: add a verify step (after the fix the command prompt shows the healed network; the player runs the test that proves it)
 - [x] Multi-step tickets, step 3: make printer tickets multi-step too (diagnose the queue/driver/network fault, then fix it on the print server)
-- [ ] Admin console, step 1: a mock user-admin panel (account status, MFA methods, sessions, mailbox rules) where the player fixes lockout/MFA tickets by clicking the right actions in the right order, instead of picking one option
+- [x] Admin console, step 1: a mock user-admin panel (account status, MFA methods, sessions, mailbox rules); MFA fatigue tickets are contained by ticking the right actions and applying them
 - [ ] Requirements gathering: project/new-starter tickets where the client's request is vague; pick which questions to ask (limited budget of questions), then spec the solution from the answers
 - [ ] Incident checklist: put containment/recovery steps in the right order (drag or number them); used by the ransomware event
 - [ ] Virtual PC terminal, step 2: extend the command prompt to printer and lockout tickets (Get-Printer, net user, Get-ADUser, etc.)
 - [ ] Admin console, step 2: shared mailbox and licence tickets done in the console (assign licence, Full Access, Send As)
+- [ ] Admin console, step 3: lockout tickets done in the console (verify the caller, unlock, reset, force change at next logon), with actions that must be applied in order
 - [ ] Ticket notes: after fixing, pick the right resolution note/category for the PSA; good notes give a small rep bonus
 
 ## Systems

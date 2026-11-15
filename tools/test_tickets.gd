@@ -32,7 +32,13 @@ func _init() -> void:
 				answers[t.options[t.answer]] = true
 			for si in t.get("steps", []).size():  # later steps must vary too
 				var st: Dictionary = t.steps[si]
-				if st.get("options", []) is Array and st.get("answer", -1) is int and st.answer >= 0 and st.answer < st.options.size():
+				if st.has("actions"):
+					var need: Array = []
+					for a in st.actions:
+						if a.get("need", 0) == 1:
+							need.append(a.text)
+					answers["step%d:%s" % [si, "|".join(need)]] = true
+				elif st.get("options", []) is Array and st.get("answer", -1) is int and st.answer >= 0 and st.answer < st.options.size():
 					answers["step%d:%s" % [si, st.options[st.answer]]] = true
 		# A ticket type whose right answer never varies is a memory test, not a puzzle.
 		if answers.size() < 2:
@@ -63,15 +69,23 @@ func _check(kind: String, t: Dictionary) -> void:
 			_fail(kind, "steps is empty")
 		else:
 			for st in t.steps:
-				for k in ["name", "info_add", "question", "options", "answer", "explain"]:
+				var keys := ["name", "info_add", "question", "explain"]
+				keys.append_array(["actions"] if st.has("actions") else ["options", "answer"])
+				for k in keys:
 					if not st.has(k):
 						_fail(kind, "step missing field '%s'" % k)
 						return
-				_check_options(kind, st.options, st.answer)
+				if st.has("actions"):
+					_check_actions(kind, st.actions)
+					for a in st.actions:
+						text += " " + str(a.get("text", "")).to_lower()
+				else:
+					_check_options(kind, st.options, st.answer)
+					text += " " + " ".join(st.options).to_lower()
 				for k in ["name", "info_add", "question", "explain"]:
 					if str(st[k]).strip_edges() == "":
 						_fail(kind, "empty step '%s'" % k)
-				text += " " + " ".join([st.info_add, st.question, st.explain, " ".join(st.options)]).to_lower()
+				text += " " + " ".join([st.info_add, st.question, st.explain]).to_lower()
 	if t.has("term"):
 		var Terminal = load("res://scripts/terminal.gd")
 		if not t.has("prompt"):
@@ -99,6 +113,26 @@ func _check(kind: String, t: Dictionary) -> void:
 			_fail(kind, "region-specific term '%s'" % b)
 	if "%" in text.replace("%%", "") and ("%s" in text or "%d" in text):
 		_fail(kind, "unfilled format placeholder")
+
+
+## Admin-console checklist: keys 1-9 tick them, at least one must-do and one trap, unique texts.
+func _check_actions(kind: String, acts: Array) -> void:
+	if acts.size() < 2 or acts.size() > 9:
+		_fail(kind, "%d console actions (need 2-9)" % acts.size())
+	var seen := {}
+	var must := 0
+	var trap := 0
+	for a in acts:
+		if not (a is Dictionary) or not a.has("text") or not a.has("need") or not (a.need in [-1, 0, 1]):
+			_fail(kind, "bad console action %s" % str(a))
+			continue
+		if str(a.text).strip_edges() == "" or seen.has(a.text):
+			_fail(kind, "empty or duplicate console action '%s'" % a.text)
+		seen[a.text] = true
+		must += 1 if a.need == 1 else 0
+		trap += 1 if a.need == -1 else 0
+	if must == 0 or trap == 0:
+		_fail(kind, "console needs at least one must-do and one wrong action")
 
 
 func _check_options(kind: String, opts: Array, answer: int) -> void:

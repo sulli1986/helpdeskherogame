@@ -8,6 +8,8 @@ extends RefCounted
 ##   options, answer, explain). The top-level question is step 1; info_add is appended to the evidence
 ##   when that step opens. Each step pays out; a wrong step escalates the ticket. A step with
 ##   live = true reopens the command prompt; term_fault (if set) changes what the PC sees first.
+##   A step can have actions (Array of {text, need}) instead of options/answer: an admin-console
+##   checklist; it's right when every need = 1 action is ticked and no need = -1 one is.
 ## New ticket types: add a _make_<kind>() and list it in KINDS. Keep answers technically right;
 ## the players are often real IT people.
 
@@ -52,7 +54,8 @@ func make(kind := "") -> Dictionary:
 	t["user"] = ctx.user
 	_shuffle_options(t)
 	for st in t.get("steps", []):
-		_shuffle_options(st)
+		if st.has("options"):  # console steps ("actions") keep their admin-console order
+			_shuffle_options(st)
 	return t
 
 
@@ -420,34 +423,68 @@ func _make_licence(c: Dictionary) -> Dictionary:
 
 
 # ---------------------------------------------------------------- MFA fatigue
+## Two steps: read the logs to work out whether MFA held, then contain it in the admin console by
+## ticking the actions the account needs (desk.gd draws "actions" as a checklist with an Apply button).
+## need: 1 = must do, 0 = fine either way, -1 = wrong (weakens security or deletes the user's own data).
 func _make_mfa(c: Dictionary) -> Dictionary:
 	var got_in := rng.randf() < 0.5
 	var start_min := rng.randi_range(5, 20)
 	var tries := rng.randi_range(9, 24)
 	var ip := "203.0.113.%d" % rng.randi_range(2, 250)
 	var upn := "%s@%s" % [c.sam, c.domain]
-	var info := "Entra sign-ins:  %s\nFrom:            %s (hosting provider, never seen before)\nAttempts:        %d, 02:%02d-02:%02d, password correct each time\nMFA method:      Authenticator push (number matching)\n" % [upn, ip, tries, start_min, start_min + 18]
+	var phones := ["iPhone 15", "Pixel 8", "Galaxy S23", "iPhone 13"]
+	var own: String = _pick(phones)
+	phones.erase(own)
+	var rogue: String = _pick(phones)
+	var rule: String = _pick(["invoice", "payment", "bank"])
+	var approved := start_min + 18
+	var info := "Entra sign-ins:  %s\nFrom:            %s (hosting provider, never seen before)\nAttempts:        %d, 02:%02d-02:%02d, password correct each time\nMFA method:      Authenticator push (number matching)\n" % [upn, ip, tries, start_min, approved]
 	if got_in:
-		var rule: String = _pick(["invoice", "payment", "bank"])
-		info += "MFA result:      denied x%d, APPROVED 02:%02d\n\nAudit 02:%02d:     User registered security info (Authenticator)\nExchange 02:%02d:  Inbox rule moves mail containing \"%s\" to RSS Feeds\nCall notes:      a \"helpdesk\" caller read them a number to enter" % [tries - 1, start_min + 18, start_min + 21, start_min + 26, rule]
+		info += "MFA result:      denied x%d, APPROVED 02:%02d\n\nAudit 02:%02d:     User registered security info (Authenticator)\nExchange 02:%02d:  New-InboxRule\nCall notes:      a \"helpdesk\" caller read them a number to enter" % [tries - 1, approved, approved + 3, approved + 8]
 	else:
 		info += "MFA result:      denied x%d (every prompt)\n\nAudit log:       no changes to security info or mailbox rules\nCall notes:      %s denied them all; nobody else contacted them" % [tries, c.first]
+	var console := "Sign-in:         allowed\n"
+	if got_in:
+		console += "Sessions:        signed in from %s since 02:%02d\nAuth methods:    Authenticator on %s (added last year)\n                 Authenticator on %s (added today 02:%02d)\nInbox rules:     \"Newsletters\" (last year): mail from news@ to Newsletters\n                 \".\" (today 02:%02d): mail containing \"%s\" to RSS Feeds" % [ip, approved, own, rogue, approved + 3, approved + 8, rule]
+	else:
+		console += "Sessions:        none from %s\nAuth methods:    Authenticator on %s (added last year)\nInbox rules:     \"Newsletters\" (last year): mail from news@ to Newsletters" % [ip, own]
+	var actions: Array = [
+		{"text": "Block sign-in", "need": 0},
+		{"text": "Revoke all sessions (sign out everywhere)", "need": 1 if got_in else 0},
+		{"text": "Reset password, change required at next sign-in", "need": 1},
+	]
+	if got_in:
+		actions.append({"text": "Remove the Authenticator on %s (added today)" % rogue, "need": 1})
+		actions.append({"text": "Delete inbox rule \".\" (\"%s\" mail to RSS Feeds)" % rule, "need": 1})
+	actions.append({"text": "Delete inbox rule \"Newsletters\"", "need": -1})
+	actions.append({"text": "Turn off MFA for this user until it settles down", "need": -1})
+	actions.append({"text": "Add %s as a trusted location" % ip, "need": -1})
 	return {
 		"priority": 1,
 		"subject": "Authenticator prompts I didn't start",
 		"body": "%s: \"My phone kept buzzing with sign-in requests from about 2am. I wasn't logging in. What's going on?\"" % c.first,
 		"info_title": "Sign-in + audit logs",
 		"info": info,
-		"question": "What's happened, and what do you do?",
+		"question": "What's happened?",
 		"options": [
-			"Password is known but MFA held: reset the password and revoke sessions",
-			"Attacker is in: block sign-in, revoke sessions, reset password, remove their MFA method and inbox rule",
-			"Tell them to approve one so the prompts stop, then keep an eye on it",
-			"Turn MFA off for this user until the prompts die down",
+			"Someone has the password, but MFA held and nobody got in",
+			"The attacker got in: a push was approved and they've set up a foothold",
+			"Nothing to worry about: an Authenticator app glitch",
+			"The user's phone has malware that's sending the prompts",
 		],
 		"answer": 1 if got_in else 0,
-		"explain": ("The 02:%02d approval let them in, then they added their own Authenticator and a rule to hide replies. Contain it: block, revoke, reset, remove both, then check what was sent. Never enter a number someone gives you." % (start_min + 18) if got_in
-			else "Each push came after a correct password, so it's compromised even though MFA held. Reset it and revoke sessions; Conditional Access or phishing-resistant MFA cuts this off."),
+		"explain": ("The 02:%02d approval let them in. Then they registered their own Authenticator and made an inbox rule, so they keep access and hide replies. Never enter a number someone gives you. Next: contain it in the admin console." % approved if got_in
+			else "Each push came after a correct password, so the password is compromised even though MFA held. The pushes came from an attacker's sign-in, not the phone. Next: lock it down in the admin console."),
+		"step_name": "Diagnose",
+		"steps": [{
+			"name": "Contain",
+			"info_add": "\n\n--- Admin console: %s ---\n%s\n" % [upn, console],
+			"question": "Tick everything this account needs, then Apply",
+			"actions": actions,
+			"explain": ("Revoke the sessions and reset the password to throw them out, remove their Authenticator so they can't come back in, and delete their rule so replies stop being hidden. Blocking sign-in while you work is fine. Leave the user's own Newsletters rule, and never weaken MFA or trust the attacker's IP. Then check what was sent from the mailbox."
+				if got_in else
+				"Reset the password: the attacker knows it. MFA held and nothing was changed, so there's nothing of theirs to remove; revoking sessions or blocking sign-in is extra caution, not required. Leave the user's own Newsletters rule, and never weaken MFA or trust the attacker's IP. Conditional Access or phishing-resistant MFA would stop these prompts."),
+		}],
 	}
 
 

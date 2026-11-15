@@ -82,7 +82,7 @@ def welcome(site: str) -> str:
 <section><h2>How to play</h2><ul>
 <li>Tickets arrive in the queue, from P1 (most urgent, shortest SLA) to P4. Work the urgent ones first.</li>
 <li>Open a ticket, read the evidence, then pick your answer with the buttons or keys 1-4.</li>
-<li>Some tickets have several steps (diagnose, fix, verify), and network tickets give you a command prompt to type into.</li>
+<li>Some tickets have several steps (diagnose, fix, verify), and network tickets give you a command prompt to type into. Some fixes happen in an admin console: tick every action the account needs, then Apply.</li>
 <li>Faster correct fixes pay more. Wrong calls and SLA breaches cost reputation; lose it all and the client walks.</li>
 <li>Press V in the game for what's new, M to mute.</li>
 </ul></section>"""

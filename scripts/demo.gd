@@ -53,7 +53,7 @@ func _start_shift() -> void:
 	main.summary.visible = false
 	desk.spawn_scale = 2.4
 	desk.clock_scale = 9.0   # 8am to 5pm in ~47s, leaving time for the shift report
-	desk.first_kind = "printer"  # Day 7: open on a printer ticket: diagnose, then fix
+	desk.first_kind = "mfa"  # Day 8: open on an MFA ticket: diagnose, then contain it in the admin console
 	desk.start(7)
 	_auto = true
 	_step_t = READ_TIME
@@ -95,6 +95,15 @@ func _process(delta: float) -> void:
 			_typing.pop_front()
 			_typed = ""
 			_step_t = 1.6
+	elif desk.current.has("actions"):
+		# Day 8: tick the actions the account needs one by one, then Apply.
+		for i in desk.current.actions.size():
+			if desk.current.actions[i].need == 1 and not desk._action_boxes[i].button_pressed:
+				desk.answer(i)
+				_step_t = 0.7
+				return
+		desk.apply_console()
+		_step_t = RESULT_TIME + 1.0
 	else:
 		var pick: int = desk.current.answer
 		if not _wrong_done and _t >= WRONG_AT:

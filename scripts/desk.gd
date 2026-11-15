@@ -1,6 +1,6 @@
 extends Control
 ## One helpdesk shift. Tickets queue on the left (top in portrait), the open ticket on the right.
-## Answer with the option buttons or keys 1-4, Enter for the next ticket, Tab / arrows to switch.
+## Answer with the option buttons or keys 1-4 (admin-console steps: 1-9 tick, Enter applies), Enter for the next ticket, Tab / arrows to switch.
 
 signal shift_ended(stats: Dictionary)
 signal cash_earned(amount: int, resolved: bool)  # resolved: the ticket is closed (not just one step)
@@ -82,6 +82,7 @@ var _compact := false          # phone portrait: queue and ticket are separate s
 var _view_queue := false       # compact only: showing the queue screen rather than the ticket
 var _back: Button              # compact only: "< Queue (n)" above the ticket
 var _next_btn: Button          # under the result: next ticket / next step
+var _action_boxes: Array = []  # admin-console steps: one CheckBox per action, in current.actions order
 
 
 func _ready() -> void:
@@ -156,11 +157,42 @@ func _process(delta: float) -> void:
 func answer(i: int) -> void:
 	if current.is_empty() or _answered or not running:
 		return
+	if current.has("actions"):  # admin console: number keys tick the actions
+		if i >= 0 and i < _action_boxes.size():
+			_action_boxes[i].button_pressed = not _action_boxes[i].button_pressed
+		return
 	var opts: Array = current.options
 	if i < 0 or i >= opts.size():
 		return
+	_resolve(i == current.answer, i)
+
+
+## Admin console steps: apply the ticked actions. Right when every must-do action is ticked and
+## nothing harmful is; the result says what was missed or shouldn't have been done.
+func apply_console() -> void:
+	if current.is_empty() or _answered or not running or not current.has("actions"):
+		return
+	var missed: Array = []
+	var bad: Array = []
+	for i in current.actions.size():
+		var a: Dictionary = current.actions[i]
+		var on: bool = _action_boxes[i].button_pressed
+		if a.need == 1 and not on:
+			missed.append(a.text)
+		elif a.need == -1 and on:
+			bad.append(a.text)
+	var note := ""
+	if not missed.is_empty():
+		note += "Missed: %s.\n" % "; ".join(missed)
+	if not bad.is_empty():
+		note += "Shouldn't have: %s.\n" % "; ".join(bad)
+	if note != "":
+		current.explain = "%s\n%s" % [note, current.explain]
+	_resolve(missed.is_empty() and bad.is_empty(), -1)
+
+
+func _resolve(ok: bool, i: int) -> void:
 	_answered = true
-	var ok: bool = i == current.answer
 	var more: bool = ok and not current.get("steps", []).is_empty()  # right, but there's another step
 	if not more:
 		solved += 1
@@ -203,8 +235,16 @@ func _advance_step(t: Dictionary) -> void:
 	t.term_live = st.get("live", false)  # this step reopens the command prompt
 	if st.has("term_fault"):
 		t.term.fault = st.term_fault
-	for k in ["question", "options", "answer", "explain"]:
+	for k in ["question", "explain"]:
 		t[k] = st[k]
+	if st.has("actions"):  # an admin-console checklist instead of options
+		t.actions = st.actions
+		t.options = []
+		t.answer = -1
+	else:
+		t.erase("actions")
+		t.options = st.options
+		t.answer = st.answer
 	(t.row.get_meta("subject") as Label).text = "%s  (step %d: %s)" % [t.subject, t.step_no, st.name]
 
 
@@ -230,11 +270,13 @@ func _unhandled_input(event: InputEvent) -> void:
 	if not running or not visible or not (event is InputEventKey) or not event.pressed or event.echo:
 		return
 	var k: int = event.physical_keycode
-	if k >= KEY_1 and k <= KEY_4:
+	if k >= KEY_1 and k <= KEY_9:
 		answer(k - KEY_1)
 	elif k == KEY_ENTER or k == KEY_KP_ENTER or k == KEY_SPACE:
 		if _answered or current.is_empty():
 			next_ticket()
+		elif current.has("actions") and k != KEY_SPACE:  # only Enter applies a console checklist
+			apply_console()
 	elif k == KEY_TAB or k == KEY_DOWN:
 		select_offset(1)
 	elif k == KEY_UP:
@@ -378,6 +420,10 @@ func _show_ticket(t: Dictionary) -> void:
 		_console_to_end()  # the new step's evidence was added at the bottom
 	for c in _opts.get_children():
 		c.queue_free()
+	_action_boxes.clear()
+	if t.has("actions"):
+		_build_console(t)
+		return
 	for i in t.options.size():
 		var b := Button.new()
 		b.text = "%d   %s" % [i + 1, t.options[i]]
@@ -387,6 +433,30 @@ func _show_ticket(t: Dictionary) -> void:
 		b.custom_minimum_size = Vector2(0, 52 if _touch else 40)
 		b.pressed.connect(answer.bind(i))
 		_opts.add_child(b)
+
+
+## Admin console step: a checklist of actions plus an Apply button (Enter).
+func _build_console(t: Dictionary) -> void:
+	for i in t.actions.size():
+		var cb := CheckBox.new()
+		cb.text = "%d   %s" % [i + 1, t.actions[i].text] if not _touch else t.actions[i].text
+		cb.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		cb.focus_mode = Control.FOCUS_NONE
+		cb.custom_minimum_size = Vector2(0, 50 if _touch else 36)
+		cb.add_theme_stylebox_override("normal", UI.box(UI.ROW, 6, 8))
+		cb.add_theme_stylebox_override("hover", UI.box(UI.ROW_SEL, 6, 8))
+		cb.add_theme_stylebox_override("pressed", UI.box(UI.ROW_SEL, 6, 8))
+		cb.add_theme_stylebox_override("hover_pressed", UI.box(UI.ROW_SEL, 6, 8))
+		cb.toggled.connect(func(_on: bool) -> void: _sfx("type"))
+		_opts.add_child(cb)
+		_action_boxes.append(cb)
+	var apply := Button.new()
+	apply.text = "Apply changes" if _touch else "Apply changes   (Enter)"
+	apply.focus_mode = Control.FOCUS_NONE
+	apply.custom_minimum_size = Vector2(0, 52 if _touch else 42)
+	apply.add_theme_color_override("font_color", UI.ACCENT)
+	apply.pressed.connect(apply_console)
+	_opts.add_child(apply)
 
 
 ## Run a command in the open ticket's simulated command prompt and append the output.
@@ -447,6 +517,19 @@ func _on_term_key(e: InputEvent) -> void:
 
 
 func _mark_options(chosen: int) -> void:
+	if current.has("actions"):  # console: green = needed and done, amber = needed but missed, red = harmful
+		for c in _opts.get_children():
+			if c is BaseButton:
+				c.disabled = true
+		for i in _action_boxes.size():
+			var need: int = current.actions[i].need
+			var cb: CheckBox = _action_boxes[i]
+			if need == 1:
+				var done: bool = cb.button_pressed
+				cb.add_theme_stylebox_override("disabled", UI.box((UI.GOOD if done else Color(1, 0.75, 0.3)).darkened(0.55), 6, 8))
+			elif need == -1 and cb.button_pressed:
+				cb.add_theme_stylebox_override("disabled", UI.box(UI.BAD.darkened(0.55), 6, 8))
+		return
 	var btns := _opts.get_children()
 	for i in btns.size():
 		var b: Button = btns[i]
