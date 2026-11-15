@@ -76,15 +76,20 @@ jobs:
           mkdir -p build/web
           ~/godot/godot --headless --import --quit || true
           # Export under a per-build name (game-<sha>.js/.wasm/.pck/...) so browsers can never pair a fresh
-          # page with yesterday's cached game files; only the HTML keeps a fixed name (index.html).
+          # page with yesterday's cached game files; only the HTML keeps a fixed name (play.html).
+          # The site root (/) is the welcome page (tools/welcome.py), a content page that carries AdSense;
+          # the game page itself never does (AdSense policy: no ads on screens without publisher content).
           V=$(git rev-parse --short HEAD)
           ~/godot/godot --headless --export-release "Web" "build/web/game-${V}.html"
-          mv "build/web/game-${V}.html" build/web/index.html
-          grep -q "game-${V}" build/web/index.html || { echo "::error::exported page doesn't reference game-${V}"; exit 1; }
+          mv "build/web/game-${V}.html" build/web/play.html
+          grep -q "game-${V}" build/web/play.html || { echo "::error::exported page doesn't reference game-${V}"; exit 1; }
           # version.txt + a check in the page: a cached index.html reloads itself when a newer day is out.
-          python3 tools/version_check.py build/web "${V}"
+          python3 tools/version_check.py build/web "${V}" play.html
           # Search/share metadata in the page, plus robots.txt + sitemap.xml for the site root.
           python3 tools/seo.py build/web build/site "${{ vars.GAME_URL }}"
+          GAME_URL="${{ vars.GAME_URL }}" CONTACT_EMAIL="${{ vars.CONTACT_EMAIL }}" UMAMI_WEBSITE_ID="${{ vars.UMAMI_WEBSITE_ID }}" \
+            GA_MEASUREMENT_ID="${{ vars.GA_MEASUREMENT_ID || 'G-LG9NEH229Y' }}" python3 tools/welcome.py build/site
+          ! grep -q adsbygoogle build/web/play.html || { echo "::error::AdSense must not be on the game page"; exit 1; }
           ls -la build/web
 
       - name: Upload to Bunny Storage
@@ -138,6 +143,8 @@ jobs:
         run: |
           . tools/bunny.sh; bunny_init
           N=$(grep -m1 -oP '^## Day \K\d+' CHANGELOG.md)
+          # Archived days keep the game as their index.html (that's what /days/ links to).
+          cp build/web/play.html build/web/index.html
           bunny_put_dir build/web "days/day-${N}"
           python3 tools/days_index.py build/days/index.html
           bunny_put build/days/index.html days/index.html

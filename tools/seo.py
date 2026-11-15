@@ -3,7 +3,7 @@
 Usage: seo.py WEB_DIR SITE_OUT_DIR [SITE_URL]
 
 - Adds a descriptive title, meta description, canonical link, Open Graph / Twitter cards and
-  schema.org VideoGame data to WEB_DIR/index.html, plus a <noscript> summary crawlers can read
+  schema.org VideoGame data to WEB_DIR/play.html (the game page; welcome.py reuses head_tags for /), plus a <noscript> summary crawlers can read
   (the game itself is a canvas with no text in the page).
 - Writes robots.txt and sitemap.xml to SITE_OUT_DIR (uploaded to the site root).
 SITE_URL (the public https://... address, from the GAME_URL variable) is needed for the absolute
@@ -34,51 +34,63 @@ ABOUT = [
 ]
 
 
-def main() -> None:
-    web, out = Path(sys.argv[1]), Path(sys.argv[2])
-    site = (sys.argv[3] if len(sys.argv) > 3 else "").strip().rstrip("/")
+def site_url(raw: str) -> str:
+    site = raw.strip().rstrip("/")
     if site and not re.fullmatch(r"https://[A-Za-z0-9.-]+(:\d+)?", site):
         print("seo: SITE_URL '%s' isn't https://host; skipping absolute URLs" % site, file=sys.stderr)
-        site = ""
+        return ""
+    return site
+
+
+def head_tags(site: str, path: str = "/") -> list:
+    """Canonical link, share cards and VideoGame schema (needs the public https:// site URL)."""
+    if not site:
+        return []
+    e = html.escape
+    img = site + "/clips/og.jpg"  # a frame of the latest daily clip (clip job)
+    head = [
+        '<link rel="canonical" href="%s%s">' % (site, path),
+        '<meta property="og:type" content="website">',
+        '<meta property="og:site_name" content="Helpdesk Hero">',
+        '<meta property="og:title" content="%s">' % e(TITLE),
+        '<meta property="og:description" content="%s">' % e(DESC),
+        '<meta property="og:url" content="%s%s">' % (site, path),
+        '<meta property="og:image" content="%s">' % img,
+        '<meta property="og:image:width" content="1200">',
+        '<meta property="og:image:height" content="630">',
+        '<meta name="twitter:card" content="summary_large_image">',
+        '<meta name="twitter:title" content="%s">' % e(TITLE),
+        '<meta name="twitter:description" content="%s">' % e(DESC),
+        '<meta name="twitter:image" content="%s">' % img,
+    ]
+    ld = {
+        "@context": "https://schema.org", "@type": "VideoGame", "name": "Helpdesk Hero",
+        "url": site + "/", "description": DESC, "image": img,
+        "genre": ["Simulation", "Educational"], "gamePlatform": "Web browser",
+        "applicationCategory": "Game", "operatingSystem": "Any (web browser)",
+        "playMode": "SinglePlayer", "inLanguage": "en",
+        "offers": {"@type": "Offer", "price": "0", "priceCurrency": "USD"},
+    }
+    head.append('<script type="application/ld+json">%s</script>' % json.dumps(ld, separators=(",", ":")))
+    return head
+
+
+def main() -> None:
+    web, out = Path(sys.argv[1]), Path(sys.argv[2])
+    site = site_url(sys.argv[3] if len(sys.argv) > 3 else "")
     e = html.escape
     head = [
         '<meta name="description" content="%s">' % e(DESC),
         '<meta name="theme-color" content="#0b0f19">',
-    ]
-    if site:
-        img = site + "/clips/og.jpg"  # a frame of the latest daily clip (clip job)
-        head += [
-            '<link rel="canonical" href="%s/">' % site,
-            '<meta property="og:type" content="website">',
-            '<meta property="og:site_name" content="Helpdesk Hero">',
-            '<meta property="og:title" content="%s">' % e(TITLE),
-            '<meta property="og:description" content="%s">' % e(DESC),
-            '<meta property="og:url" content="%s/">' % site,
-            '<meta property="og:image" content="%s">' % img,
-            '<meta property="og:image:width" content="1200">',
-            '<meta property="og:image:height" content="630">',
-            '<meta name="twitter:card" content="summary_large_image">',
-            '<meta name="twitter:title" content="%s">' % e(TITLE),
-            '<meta name="twitter:description" content="%s">' % e(DESC),
-            '<meta name="twitter:image" content="%s">' % img,
-        ]
-        ld = {
-            "@context": "https://schema.org", "@type": "VideoGame", "name": "Helpdesk Hero",
-            "url": site + "/", "description": DESC, "image": img,
-            "genre": ["Simulation", "Educational"], "gamePlatform": "Web browser",
-            "applicationCategory": "Game", "operatingSystem": "Any (web browser)",
-            "playMode": "SinglePlayer", "inLanguage": "en",
-            "offers": {"@type": "Offer", "price": "0", "priceCurrency": "USD"},
-        }
-        head.append('<script type="application/ld+json">%s</script>' % json.dumps(ld, separators=(",", ":")))
+    ] + head_tags(site, "/play.html")
 
-    page = web / "index.html"
+    page = web / "play.html"  # the game; the welcome page at / is written by welcome.py
     s = page.read_text(encoding="utf-8")
     s = re.sub(r"<title>.*?</title>", "<title>%s</title>" % e(TITLE), s, count=1, flags=re.S)
     s = s.replace("</head>", "\n".join(head) + "\n</head>", 1)
     body = "".join("<p>%s</p>" % e(p) for p in ABOUT)
     nos = ('<noscript><h1>Helpdesk Hero</h1>%s<p>Turn on JavaScript to play. '
-           '<a href="/days/">See every day\'s changes</a>.</p></noscript>' % body)
+           '<a href="/">About the game</a> · <a href="/days/">See every day\'s changes</a>.</p></noscript>' % body)
     s = re.sub(r"(<body[^>]*>)", lambda m: m.group(1) + "\n" + nos, s, count=1)
     page.write_text(s, encoding="utf-8")
 
@@ -88,11 +100,11 @@ def main() -> None:
         robots += "Sitemap: %s/sitemap.xml\n" % site
         today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
         urls = "".join("<url><loc>%s%s</loc><lastmod>%s</lastmod><changefreq>daily</changefreq></url>" % (site, p, today)
-                       for p in ["/", "/days/"])
+                       for p in ["/", "/play.html", "/days/", "/privacy.html"])
         (out / "sitemap.xml").write_text('<?xml version="1.0" encoding="UTF-8"?>\n'
                                          '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">%s</urlset>\n' % urls)
     (out / "robots.txt").write_text(robots)
-    # Authorises Google AdSense for this site (ads appear only on content pages, see days_index.py).
+    # Authorises Google AdSense for this site (ads appear only on content pages: welcome.py, days_index.py).
     (out / "ads.txt").write_text("google.com, pub-1544955300869521, DIRECT, f08c47fec0942fa0\n")
     print("seo: %s, site=%s" % (page, site or "(none)"))
 

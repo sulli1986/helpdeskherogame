@@ -16,7 +16,7 @@ cards = []
 for n, date, body in entries:
     bullets = "".join(f"<li>{html.escape(l[2:].strip())}</li>" for l in body.splitlines() if l.startswith("- "))
     tag = '<span class="tag">Latest</span>' if int(n) == latest else ""
-    play = "/" if int(n) == latest else f"/days/day-{n}/index.html"
+    play = "/play.html" if int(n) == latest else f"/days/day-{n}/index.html"
     cards.append(f"""
   <article>
     <header><h2>Day {n} {tag}</h2><time>{html.escape(date)}</time></header>
@@ -31,7 +31,8 @@ _sys.path.insert(0, str(Path(__file__).parent))
 from inject_analytics import tags as _analytics_tags
 umami = _analytics_tags()  # Umami and/or GA4, from env
 # Google AdSense: only on content pages like this one, never on the game screen (AdSense policy: no ads
-# on screens without publisher content). ads.txt for this publisher is written by seo.py.
+# on screens without publisher content). ads.txt for this publisher is written by seo.py; the welcome
+# page at / (welcome.py) carries ads too.
 ADSENSE = ('<script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js'
            '?client=ca-pub-1544955300869521" crossorigin="anonymous"></script>')
 _site = os.environ.get("GAME_URL", "").strip().rstrip("/")
@@ -57,7 +58,7 @@ ul{{margin:10px 0 14px;padding-left:20px;color:#cfd6e2}}
 a{{color:#7cc4ff}} .btn{{background:#2f6bff;color:#fff;text-decoration:none;padding:8px 16px;border-radius:8px;font-weight:600}}
 </style></head><body><main>
 <h1>Every day so far</h1>
-<p class="lede">An AI makes one change to this game every day. Play any day's version as it was, or <a href="/">jump back to today</a>.
+<p class="lede">An AI makes one change to this game every day. Play any day's version as it was, or <a href="/play.html">play today's</a>.
 Older days share your account, but they can't overwrite progress made in newer versions.</p>
 {''.join(cards)}
 </main></body></html>

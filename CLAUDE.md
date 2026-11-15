@@ -15,6 +15,7 @@ Godot 4.5 web game: an MSP helpdesk sim, hosted on bunny.net. Every day an agent
 - `api/edge-script.ts` — Bunny Edge Script (Deno) + Bunny Database
 - `.github/workflows/deploy.yml` — export + upload on push to `main`; archives the build to `/days/day-N/`, rebuilds `/days/index.html`, renders + posts the clip
 - `.github/workflows/backfill.yml` — manual: rebuild past days from git history, re-render/repost clips
+- `tools/welcome.py` — the welcome page at `/` (what the game is, today's CHANGELOG bullets, how to play, Play button → `/play.html`) and `/privacy.html`; keep its How to play list accurate when controls or core mechanics change
 - `tools/seo.py` — page title/description/share tags, VideoGame schema, crawlable summary, robots.txt + sitemap.xml (keep its copy accurate when the game changes); `tools/version_check.py` — per-build cache busting (cached pages reload when a newer day is out)
 - `tools/test_tickets.gd` — ticket sanity test (structure, answer range, variety, no region-specific terms)
 - `tools/` — `bunny.sh` (storage helpers), `make_clip.sh`, `clip_text.py`, `clip_filter.py`, `post_clip.sh`, `days_index.py`, `day_commits.py`, `inject_demo.py`, `inject_analytics.py`
@@ -34,7 +35,7 @@ Godot 4.5 web game: an MSP helpdesk sim, hosted on bunny.net. Every day an agent
 10. Commit to `main` with message `Day N: <change>` and push. CI deploys.
 
 ## Don't
-- Google AdSense (`ca-pub-1544955300869521`) loads only on content pages (`/days/index.html` via `tools/days_index.py`); `tools/seo.py` writes `ads.txt`. Never put AdSense on the game screen (policy: no ads on screens without publisher content).
+- Google AdSense (`ca-pub-1544955300869521`) loads only on content pages: the welcome page `/` and `/privacy.html` (`tools/welcome.py`) and `/days/index.html` (`tools/days_index.py`); `tools/seo.py` writes `ads.txt`. The game is `/play.html`: never put AdSense on the game screen (policy: no ads on screens without publisher content).
 - Don't commit secrets. Bunny keys live in GitHub secrets/vars only.
 - Don't break old saves: older day builds share the database and send no newer fields; the server ignores out-of-order saves via `seq`.
 - Don't rewrite large files for style. Don't change controls without updating the title screen's "How to play" line.
