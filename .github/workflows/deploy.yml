@@ -219,7 +219,13 @@ jobs:
       - name: Install render deps
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq xvfb libgl1-mesa-dri libglu1-mesa ffmpeg fonts-dejavu-core fontconfig > /dev/null
+          sudo apt-get install -y -qq xvfb libgl1-mesa-dri libglu1-mesa ffmpeg fonts-dejavu-core fontconfig python3-numpy python3-pil > /dev/null
+
+      - name: Cache Piper voice (clip voiceover)
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/piper
+          key: piper-en_US-ljspeech-high
 
       - name: Render clip
         env:

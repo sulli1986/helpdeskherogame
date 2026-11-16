@@ -15,12 +15,12 @@ if [ "$FORCE" != "--force" ] && bunny_exists "$MARK"; then echo "Day ${N} alread
 
 HOOK="$( (cat "$DIR"/sub_*.txt 2>/dev/null || true) | tr '\n' ' ' | sed 's/  */ /g; s/ $//')"
 [ -n "$HOOK" ] || HOOK="$(tr '\n' ' ' < "$DIR/sub.txt" | sed 's/  */ /g; s/ $//')"
-TITLE="Day ${N}: ${HOOK} | AI builds an IT helpdesk game daily #Shorts"
+TITLE="${HOOK} | Day ${N} of an AI building an IT helpdesk game #Shorts"
 TITLE="${TITLE:0:100}"
 P="${PLATFORMS:-youtube}"; plat=(); for p in ${P//,/ }; do plat+=(-F "platform[]=$p"); done
 # X gets its own short text with the link (280 char limit); Facebook needs a Page ID only if several Pages are connected.
 URL="${GAME_URL:-}"
-XTEXT="Day ${N} of an AI building an IT helpdesk game, one change a day: ${HOOK}. Play free in your browser: ${URL} #gamedev #ITsupport #MSP #AI #buildinpublic"
+XTEXT="${HOOK}. Day ${N} of an AI building an IT helpdesk game, one feature a day. Play free in your browser: ${URL} #gamedev #ITsupport #MSP #AI #buildinpublic"
 XTEXT="${XTEXT:0:280}"
 extra=(-F "x_title=${XTEXT}")
 FBPAGE="$(printf '%s' "${UPLOADPOST_FACEBOOK_PAGE_ID:-}" | tr -d '[:space:]')"

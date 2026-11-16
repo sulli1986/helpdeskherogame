@@ -1,13 +1,14 @@
 extends Node
-## Scripted autopilot for the daily promo clip (~59s, fits a YouTube Short). Launch with:
+## Scripted autopilot for the daily promo clip (~27s Short). Launch with:
 ##   godot --write-movie out.avi --fixed-fps 30 -- --demo
-## Renders portrait (720x1280). Daily changes can add a beat to TIMELINE to show off the new
-## feature; keep END_AT under 59s and retime an existing beat rather than extending.
+## Renders portrait (720x1280). The clip is about TODAY's feature: the shift starts at once with
+## first_kind set to the new/changed ticket, and the autopilot plays it at a watchable pace while
+## the voiceover (tools/clip_script.json) explains it. Keep END_AT about 27s.
 
-const END_AT := 58.8
+const END_AT := 27.0
 const READ_TIME := 2.4      # seconds "reading" a ticket before answering
 const RESULT_TIME := 1.8    # seconds showing the explanation
-const WRONG_AT := 24.0      # make one deliberate wrong call around here (shows the penalty)
+const WRONG_AT := 17.0      # one deliberate wrong call after the feature (shows the penalty)
 
 var main: Node
 var desk: Node
@@ -40,11 +41,8 @@ func start(m: Node) -> void:
 	])
 
 	_timeline = [
-		# 0-4.5s: what's new today
-		[0.2, func() -> void: main.news.toggle()],
-		[4.5, func() -> void: main.news.toggle()],
-		# 4.6s on: a sped-up shift, answered by the autopilot
-		[4.6, _start_shift],
+		# From the first frame: a shift, opening on today's feature (the hook card sits over it)
+		[0.0, _start_shift],
 		[END_AT, func() -> void: get_tree().quit()],
 	]
 
@@ -52,12 +50,12 @@ func start(m: Node) -> void:
 func _start_shift() -> void:
 	main.title.visible = false
 	main.summary.visible = false
-	desk.spawn_scale = 5.0
-	desk.clock_scale = 12.8  # 8am to 5pm in ~47s, leaving time for the shift report
+	desk.spawn_scale = 4.0
+	desk.clock_scale = 8.0   # the clock visibly moves, but the shift doesn't end in the clip
 	desk.first_kind = "lockout"  # Day 9: open on a lockout: check the caller and fix it in Toolbox > Accounts
 	desk.start(11)  # Day 9: a lockout that checks out, fixed in Accounts
 	_auto = true
-	_step_t = READ_TIME
+	_step_t = 2.8  # the hook line plays over the first ticket
 
 
 func _process(delta: float) -> void:
@@ -131,13 +129,13 @@ func _plan_accounts(t: Dictionary) -> void:
 		[desk.toggle_toolbox, 0.1],
 		[_scroll_to.bind(acc), 1.4],
 		[acc.select.bind(goal.sam), 0.1],
-		[_scroll_to.bind(acc._profile), 2.0],
+		[_scroll_to.bind(acc._profile), 4.2],  # "check their mobile on file"
 	]
 	if not goal.hold:
 		if goal.unlock:
-			_plan.append([acc.unlock, 0.8])
+			_plan.append([acc.unlock, 0.9])
 		if goal.reset:
-			_plan.append([acc.reset_password, 0.8])
+			_plan.append([acc.reset_password, 0.9])
 		if goal.must_change:
 			_plan.append([acc.set_must_change.bind(true), 1.0])
 		for g in goal.add:
