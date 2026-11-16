@@ -1,5 +1,10 @@
 # Changelog
 
+## Day 9 — 2026-11-17
+- Do the fix yourself: lockout and file-access tickets now open the Toolbox. Press T (or tap Open Toolbox) and work in Accounts
+- Find the right user (watch for colleagues with the same first name), check their mobile on file against the callback, then unlock, reset and require a new password at next sign-in
+- Access requests: tick the right group (Read or Modify) and nothing more, or hold if the manager hasn't approved. Change the wrong account, or anything you shouldn't, and the ticket escalates
+
 ## Day 8 — 2026-11-16
 - Lock it down yourself: MFA fatigue tickets now open an admin console. Tick every action the account needs, then Apply
 - First read the sign-in logs: did MFA hold, or did the attacker get in? Then reset, revoke, remove their Authenticator and their sneaky inbox rule, but leave the user's own rules alone

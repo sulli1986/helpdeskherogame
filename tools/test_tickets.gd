@@ -86,6 +86,10 @@ func _check(kind: String, t: Dictionary) -> void:
 					if str(st[k]).strip_edges() == "":
 						_fail(kind, "empty step '%s'" % k)
 				text += " " + " ".join([st.info_add, st.question, st.explain]).to_lower()
+	if t.has("acct"):
+		_check_acct(kind, t)
+		for u in t.acct.users:
+			text += " " + " ".join([u.name, u.title, u.upn, u.device, u.licence, " ".join(u.groups)]).to_lower()
 	if t.has("term"):
 		var Terminal = load("res://scripts/terminal.gd")
 		if not t.has("prompt"):
@@ -133,6 +137,55 @@ func _check_actions(kind: String, acts: Array) -> void:
 		trap += 1 if a.need == -1 else 0
 	if must == 0 or trap == 0:
 		_fail(kind, "console needs at least one must-do and one wrong action")
+
+
+## Toolbox > Accounts tickets: options are Done / Hold; the goal must be reachable in the tool and
+## the solved directory must pass Accounts.check (and the untouched one must not, unless it's a hold).
+func _check_acct(kind: String, t: Dictionary) -> void:
+	var A = load("res://scripts/accounts.gd")
+	var a: Dictionary = t.acct
+	for k in ["users", "orig", "groups", "goal"]:
+		if not a.has(k):
+			_fail(kind, "acct missing '%s'" % k)
+			return
+	if t.options.size() != 2 or t.answer != (1 if a.goal.hold else 0):
+		_fail(kind, "acct options must be Done / Hold, answer matching goal.hold")
+	var sams := {}
+	for u in a.users:
+		if sams.has(u.sam):
+			_fail(kind, "duplicate username %s" % u.sam)
+		sams[u.sam] = true
+		for g in u.groups:
+			if not g in a.groups:
+				_fail(kind, "user in unknown group %s" % g)
+	if not sams.has(a.goal.sam):
+		_fail(kind, "target user not in the directory")
+	for g in a.goal.add:
+		if not g in a.groups:
+			_fail(kind, "goal group %s not offered" % g)
+	# Untouched: Hold is right only when the goal is to hold, Done never is.
+	if A.check(a, true).is_empty() != a.goal.hold or A.check(a, false).is_empty():
+		_fail(kind, "untouched directory judged wrongly")
+	var b: Dictionary = a.duplicate(true)
+	if not a.goal.hold:  # do exactly what the goal asks, then Done must pass and Hold must not
+		for u in b.users:
+			if u.sam == a.goal.sam:
+				if a.goal.unlock:
+					u.locked = false
+				u.reset = a.goal.reset
+				u.must_change = a.goal.must_change
+				for g in a.goal.add:
+					u.groups.append(g)
+		if not A.check(b, false).is_empty() or A.check(b, true).is_empty():
+			_fail(kind, "solved directory doesn't pass: %s" % str(A.check(b, false)))
+	# Touching a colleague is always wrong.
+	var c: Dictionary = a.duplicate(true)
+	for u in c.users:
+		if u.sam != a.goal.sam:
+			u.must_change = true
+			break
+	if A.check(c, a.goal.hold).is_empty():
+		_fail(kind, "changing another user wasn't caught")
 
 
 func _check_options(kind: String, opts: Array, answer: int) -> void:

@@ -1,6 +1,7 @@
 extends Control
 ## One helpdesk shift. Tickets queue on the left (top in portrait), the open ticket on the right.
 ## Answer with the option buttons or keys 1-4 (admin-console steps: 1-9 tick, Enter applies), Enter for the next ticket, Tab / arrows to switch.
+## T opens the Toolbox (Accounts) on tickets that are fixed there; its options are then "Done" / "Hold".
 
 signal shift_ended(stats: Dictionary)
 signal cash_earned(amount: int, resolved: bool)  # resolved: the ticket is closed (not just one step)
@@ -8,6 +9,7 @@ signal cash_earned(amount: int, resolved: bool)  # resolved: the ticket is close
 const Tickets := preload("res://scripts/tickets.gd")
 const UI := preload("res://scripts/ui.gd")
 const Terminal := preload("res://scripts/terminal.gd")
+const Accounts := preload("res://scripts/accounts.gd")
 
 const SHIFT_SECONDS := 600.0           # 8:00am to 5:00pm in ten real minutes
 const START_HOUR := 8.0
@@ -86,6 +88,8 @@ var _view_queue := false       # compact only: showing the queue screen rather t
 var _back: Button              # compact only: "< Queue (n)" above the ticket
 var _next_btn: Button          # under the result: next ticket / next step
 var _action_boxes: Array = []  # admin-console steps: one CheckBox per action, in current.actions order
+var _toolbox_btn: Button       # tickets with "acct": opens Toolbox > Accounts (T)
+var _accounts: Node            # scripts/accounts.gd, under the evidence
 
 
 func _ready() -> void:
@@ -172,7 +176,33 @@ func answer(i: int) -> void:
 	var opts: Array = current.options
 	if i < 0 or i >= opts.size():
 		return
+	if current.has("acct"):  # Toolbox tickets: "Done" or "Hold", judged on what was changed in Accounts
+		var problems: Array = Accounts.check(current.acct, i == opts.size() - 1)
+		if not problems.is_empty():
+			current.explain = "%s.\n%s" % [".\n".join(problems), current.explain]
+		current.acct_ok = problems.is_empty()
+		_resolve(problems.is_empty(), i)
+		return
 	_resolve(i == current.answer, i)
+
+
+## Show or hide Toolbox > Accounts on the open ticket (button or T).
+func toggle_toolbox() -> void:
+	if current.is_empty() or not current.has("acct") or not running:
+		return
+	current.toolbox_open = not current.get("toolbox_open", false)
+	_show_toolbox()
+
+
+func _show_toolbox() -> void:
+	var has: bool = not current.is_empty() and current.has("acct")
+	var open: bool = has and current.get("toolbox_open", false)
+	_toolbox_btn.visible = has
+	_toolbox_btn.text = ("Close Toolbox" if open else "Open Toolbox: Accounts") + ("" if _touch else "   (T)")
+	_accounts.visible = open
+	if open:
+		_accounts.touch = _touch
+		_accounts.open(current.acct, current.client, not _answered)
 
 
 ## Admin console steps: apply the ticked actions. Right when every must-do action is ticked and
@@ -285,6 +315,8 @@ func _unhandled_input(event: InputEvent) -> void:
 			next_ticket()
 		elif current.has("actions") and k != KEY_SPACE:  # only Enter applies a console checklist
 			apply_console()
+	elif k == KEY_T:
+		toggle_toolbox()
 	elif k == KEY_TAB or k == KEY_DOWN:
 		select_offset(1)
 	elif k == KEY_UP:
@@ -395,6 +427,7 @@ func _show_ticket(t: Dictionary) -> void:
 		row.add_theme_stylebox_override("panel", UI.box(UI.ROW, 6, 10))
 	if t.is_empty():
 		_detail.visible = false
+		_accounts.visible = false
 		_empty.visible = true
 		_empty.text = "Queue clear. Grab a coffee." if running else ""
 		return
@@ -427,6 +460,9 @@ func _show_ticket(t: Dictionary) -> void:
 	else:
 		_term_input.release_focus()
 	_question.text = t.question
+	if t.has("acct") and not is_same(_accounts.acct, t.acct):
+		_accounts.selected = ""  # a different ticket: start from the user list
+	_show_toolbox()
 	if t.has("term") and t.get("step_no", 1) > 1:
 		_console_to_end()  # the new step's evidence was added at the bottom
 	for c in _opts.get_children():
@@ -542,6 +578,13 @@ func _mark_options(chosen: int) -> void:
 				cb.add_theme_stylebox_override("disabled", UI.box(UI.BAD.darkened(0.55), 6, 8))
 		return
 	var btns := _opts.get_children()
+	if current.has("acct"):  # Done / Hold: the choice is only right if Accounts was left right too
+		_accounts.set_enabled(false)
+		if chosen >= 0:
+			for b in btns:
+				b.disabled = true
+			btns[chosen].add_theme_stylebox_override("disabled", UI.box((UI.GOOD if current.get("acct_ok", false) else UI.BAD).darkened(0.55), 6, 8))
+			return
 	for i in btns.size():
 		var b: Button = btns[i]
 		b.disabled = true
@@ -784,6 +827,16 @@ func _build() -> void:
 		_term_input.placeholder_text = "tap a command below (swipe for more)"
 		_term_input.editable = false
 		_term_input.focus_mode = Control.FOCUS_NONE
+	_toolbox_btn = Button.new()
+	_toolbox_btn.focus_mode = Control.FOCUS_NONE
+	_toolbox_btn.custom_minimum_size = Vector2(0, 48 if _touch else 38)
+	_toolbox_btn.add_theme_color_override("font_color", UI.ACCENT)
+	_toolbox_btn.pressed.connect(toggle_toolbox)
+	_detail.add_child(_toolbox_btn)
+	_accounts = Accounts.new()
+	_accounts.visible = false
+	_accounts.changed.connect(func() -> void: _sfx("type"))
+	_detail.add_child(_accounts)
 	_question = UI.label(_detail, "", 16, UI.ACCENT)
 	_opts = VBoxContainer.new()
 	_opts.add_theme_constant_override("separation", 6)

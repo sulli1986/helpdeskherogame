@@ -52,7 +52,8 @@ func make(kind := "") -> Dictionary:
 	t["kind"] = kind
 	t["client"] = ctx.client
 	t["user"] = ctx.user
-	_shuffle_options(t)
+	if not t.has("acct"):  # Accounts tickets keep "Done" / "Hold" in that order
+		_shuffle_options(t)
 	for st in t.get("steps", []):
 		if st.has("options"):  # console steps ("actions") keep their admin-console order
 			_shuffle_options(st)
@@ -108,54 +109,132 @@ func _make_phish(c: Dictionary) -> Dictionary:
 
 
 # ---------------------------------------------------------------- account lockout
+## Done in Toolbox > Accounts: check the callback number against the mobile on file, then either
+## unlock + reset + require a change at next sign-in, or touch nothing and refuse.
 func _make_lockout(c: Dictionary) -> Dictionary:
-	var on_file := "%04d" % rng.randi_range(0, 9999)
 	var genuine := rng.randf() < 0.65
-	var said := on_file
-	if not genuine:
-		said = "%04d" % ((int(on_file) + rng.randi_range(11, 8000)) % 10000)
 	var exec := rng.randf() < 0.3
 	var title: String = "Director" if exec else _pick(["Office Manager", "Accounts", "Reception", "Project Lead"])
-	var from: String = "their desk extension 2%02d" % rng.randi_range(10, 60) if genuine else _pick(["a private number", "a mobile not on file"])
+	var acct := _directory(c, title)
+	var u: Dictionary = acct.users[acct.target]
+	var on_file: String = u.mobile
+	var rang := on_file
+	if not genuine:
+		rang = "%04d" % ((int(on_file) + rng.randi_range(11, 8000)) % 10000)
+	u.locked = true
+	u.pwd = "last set %d days ago" % rng.randi_range(20, 80)  # before the holidays they mention
+	u.lock_info = "today 08:%02d after 5 bad passwords" % rng.randi_range(5, 55)
+	acct.orig = acct.users.duplicate(true)
+	acct.goal = {"hold": not genuine, "sam": c.sam, "unlock": true, "reset": true, "must_change": true, "add": [],
+		"hold_why": "the callback number isn't the one on file, so the caller was never verified"}
+	acct.erase("target")
 	return {
 		"priority": 1 if exec else 2,
 		"subject": "Locked out of my account",
-		"body": "%s (%s) is on the phone: \"I've been locked out and I've got a meeting in ten minutes!\"" % [c.user, title],
-		"info_title": "Active Directory + call notes",
-		"info": "User:          %s\\%s\nlockoutTime:   today 08:%02d\nbadPwdCount:   5\nMobile (AD):   04xx xxx %s\n\nCaller gave:   mobile ending %s\nCalling from:  %s" % [c.domain.get_slice(".", 0).to_upper(), c.sam, rng.randi_range(5, 55), on_file, said, from],
-		"question": "What do you do?",
+		"body": "%s (%s) is on the phone: \"I've been locked out. I think I forgot my password over the holidays, and I've got a meeting in ten minutes!\"" % [c.user, title],
+		"info_title": "Call notes",
+		"info": "Caller:     says they're %s (%s)\nCallback:   we rang the mobile ending %s that the caller gave us;\n            they answered and confirmed the request\nPolicy:     only act if the callback number matches the mobile\n            on file (Toolbox > Accounts)" % [c.user, title, rang],
+		"acct": acct,
+		"question": "Check the caller in the Toolbox (T), fix it in Accounts, or refuse",
 		"options": [
-			"Identity checks out: unlock, temp password, force change at next logon",
-			"Doesn't match: refuse, call back on the number on file, flag to security",
-			"They sound stressed. Unlock it now and verify afterwards",
+			"Done: I've fixed the account in Accounts",
+			"Refuse: touch nothing, call back on the number on file, flag to security",
 		],
-		"answer": 0 if genuine else 1,
-		"explain": ("Verified against the number on file, so unlock and force a password change." if genuine
-			else "The mobile doesn't match AD. That's a social-engineering red flag: call back on the number on file."),
+		"answer": 1 if acct.goal.hold else 0,
+		"explain": ("The callback number is the mobile on file, so the caller is verified. Unlock, reset the password and require a change at next sign-in so only they know the new one."
+			if genuine else
+			"The mobile on file ends %s, not %s. Calling back a number the caller gives you proves nothing: refuse, call back on the number on file and flag it to security." % [on_file, rang]),
 	}
 
 
 # ---------------------------------------------------------------- file share access
+## Done in Toolbox > Accounts: tick the right group for the right user, or hold for approval.
 func _make_share(c: Dictionary) -> Dictionary:
 	var dept: String = _pick(["Finance", "HR", "Projects", "Marketing"])
 	var edit := rng.randf() < 0.5
 	var approved := rng.randf() < 0.75
 	var manager := "%s %s" % [_pick(FIRST), _pick(LAST)]
-	var right := "Add to GG_%s_%s" % [dept, "Modify" if edit else "Read"]
-	var wrong := "Add to GG_%s_%s" % [dept, "Read" if edit else "Modify"]
+	var right := "GG_%s_%s" % [dept, "Modify" if edit else "Read"]
+	var acct := _directory(c, _pick(["Office Manager", "Accounts", "Reception", "Project Lead", "Designer"]), dept)
+	acct.orig = acct.users.duplicate(true)
+	acct.goal = {"hold": not approved, "sam": c.sam, "unlock": false, "reset": false, "must_change": false, "add": [right],
+		"hold_why": "nobody who owns the %s data approved it" % dept}
+	acct.erase("target")
 	var approval_line := "Approved by %s (%s manager) in the PSA" % [manager, dept] if approved else "Approval: none. %s says \"my manager's fine with it\"" % c.first
 	return {
 		"priority": 3,
 		"subject": "Need access to the %s share" % dept,
-		"body": "%s needs to %s files in \\\\FS01\\%s." % [c.first, "edit" if edit else "view", dept],
+		"body": "%s needs to %s files in \\\\FS01\\%s." % [c.user, "edit" if edit else "view", dept],
 		"info_title": "Request",
-		"info": "Share:     \\\\FS01\\%s\nNTFS:      GG_%s_Read (RX), GG_%s_Modify (M)\nAsked for: %s access\n%s" % [dept, dept, dept, "edit" if edit else "read-only", approval_line],
-		"question": "How do you grant it?",
-		"options": [right, wrong, "Add to Domain Admins so it never happens again", "Hold: get the %s manager's approval first" % dept],
-		"answer": 0 if approved else 3,
-		"explain": ("Least privilege: approved, so add them to the %s group and nothing more." % right.get_slice(" ", 2) if approved
+		"info": "Share:     \\\\FS01\\%s\nNTFS:      GG_%s_Read (Read & execute), GG_%s_Modify (Modify)\nAsked for: %s access for %s\n%s" % [dept, dept, dept, "edit" if edit else "read-only", c.user, approval_line],
+		"acct": acct,
+		"question": "Grant it in the Toolbox (T) under Accounts, or hold it",
+		"options": [
+			"Done: I've granted it in Accounts",
+			"Hold: change nothing, get the %s manager's approval first" % dept,
+		],
+		"answer": 1 if acct.goal.hold else 0,
+		"explain": ("Least privilege: approved, so add %s to %s and nothing more. They sign out and back in for the new group to apply." % [c.first, right] if approved
 			else "No approval from the data owner. Get it in writing before granting access, however small."),
 	}
+
+
+## A small user directory for Toolbox > Accounts: the ticket's user plus four colleagues (one with
+## the same first name, so you have to open the right profile). `dept` keeps the target out of
+## that department's groups. Returns {users, groups, target (index)}.
+func _directory(c: Dictionary, title: String, dept := "") -> Dictionary:
+	var prefix: String = c.domain.substr(0, 3).to_upper()
+	var depts: Array = ["Finance", "HR", "Projects", "Marketing"]
+	var groups: Array = ["GG_Staff"]
+	for d in depts:
+		groups.append_array(["GG_%s_Read" % d, "GG_%s_Modify" % d])
+	groups.append("Domain Admins")
+	var names: Array = [[c.first, c.last]]
+	var guard := 0
+	while names.size() < 5 and guard < 200:
+		guard += 1
+		var f: String = c.first if names.size() == 1 else _pick(FIRST)  # a namesake to tell apart
+		var l: String = _pick(LAST)
+		var sam := (f.substr(0, 1) + l).to_lower()
+		var clash := false
+		for n in names:
+			if (n[0].substr(0, 1) + n[1]).to_lower() == sam:
+				clash = true
+		if not clash:
+			names.append([f, l])
+	var users: Array = []
+	var pcs: Array = range(1, 30)
+	for i in names.size():
+		var f: String = names[i][0]
+		var l: String = names[i][1]
+		var sam := (f.substr(0, 1) + l).to_lower()
+		var g: Array = ["GG_Staff"]
+		var home: String = _pick(depts)
+		if not (i == 0 and home == dept):
+			g.append("GG_%s_%s" % [home, _pick(["Read", "Modify"])])
+		var pc: int = pcs.pop_at(rng.randi() % pcs.size())
+		users.append({
+			"name": "%s %s" % [f, l], "sam": sam, "upn": "%s@%s" % [sam, c.domain],
+			"title": title if i == 0 else _pick(["Office Manager", "Accounts", "Reception", "Project Lead", "Designer", "Admin Officer"]),
+			"locked": false, "lock_info": "", "pwd": "last set %d days ago" % rng.randi_range(3, 80),
+			"reset": false, "must_change": false, "mobile": "%04d" % rng.randi_range(0, 9999),
+			"methods": "Authenticator app (%s)" % _pick(["iPhone 15", "Pixel 8", "Galaxy S23", "iPhone 13"]),
+			"licence": _pick(["Microsoft 365 Business Premium", "Microsoft 365 Business Standard"]),
+			"device": "%s-PC%02d (Windows 11)" % [prefix, pc],
+			"groups": g,
+		})
+	# Shuffle so the caller isn't always first in the list.
+	var target_sam: String = users[0].sam
+	for i in range(users.size() - 1, 0, -1):
+		var j := rng.randi_range(0, i)
+		var tmp = users[i]
+		users[i] = users[j]
+		users[j] = tmp
+	var target := 0
+	for i in users.size():
+		if users[i].sam == target_sam:
+			target = i
+	return {"users": users, "groups": groups, "target": target}
 
 
 # ---------------------------------------------------------------- printer

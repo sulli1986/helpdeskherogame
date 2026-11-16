@@ -19,6 +19,7 @@ var _step_t := 0.0
 var _wrong_done := false
 var _typing: Array = []     # commands still to type into a network ticket's terminal
 var _typed := ""
+var _plan: Array = []       # Day 9: Toolbox > Accounts moves still to make, each [callable, pause]
 
 
 func start(m: Node) -> void:
@@ -53,8 +54,8 @@ func _start_shift() -> void:
 	main.summary.visible = false
 	desk.spawn_scale = 5.0
 	desk.clock_scale = 12.8  # 8am to 5pm in ~47s, leaving time for the shift report
-	desk.first_kind = "mfa"  # Day 8: open on an MFA ticket: diagnose, then contain it in the admin console
-	desk.start(7)
+	desk.first_kind = "lockout"  # Day 9: open on a lockout: check the caller and fix it in Toolbox > Accounts
+	desk.start(11)  # Day 9: a lockout that checks out, fixed in Accounts
 	_auto = true
 	_step_t = READ_TIME
 
@@ -75,6 +76,7 @@ func _process(delta: float) -> void:
 	if desk.current.is_empty() or desk._answered:
 		desk.next_ticket()
 		_typing.clear()
+		_plan.clear()
 		_step_t = READ_TIME
 	elif desk.current.has("term") and desk.current.get("term_live", true) and desk.current.get("demo_typed", 0) != desk.current.get("step_no", 1):
 		desk.current.demo_typed = desk.current.get("step_no", 1)  # Day 4: investigate in the command prompt
@@ -95,6 +97,14 @@ func _process(delta: float) -> void:
 			_typing.pop_front()
 			_typed = ""
 			_step_t = 1.6
+	elif not _plan.is_empty():
+		var move: Array = _plan.pop_front()
+		(move[0] as Callable).call()
+		_step_t = move[1]
+	elif desk.current.has("acct") and not desk.current.get("demo_planned", false):
+		desk.current.demo_planned = true
+		_plan_accounts(desk.current)
+		_step_t = 0.2
 	elif desk.current.has("actions"):
 		# Day 8: tick the actions the account needs one by one, then Apply.
 		for i in desk.current.actions.size():
@@ -111,3 +121,31 @@ func _process(delta: float) -> void:
 			pick = (pick + 1) % desk.current.options.size()
 		desk.answer(pick)
 		_step_t = RESULT_TIME
+
+
+## Day 9: open the Toolbox, find the caller in Accounts, then fix it there or refuse / hold.
+func _plan_accounts(t: Dictionary) -> void:
+	var acc: Node = desk._accounts
+	var goal: Dictionary = t.acct.goal
+	_plan = [
+		[desk.toggle_toolbox, 0.1],
+		[_scroll_to.bind(acc), 1.4],
+		[acc.select.bind(goal.sam), 0.1],
+		[_scroll_to.bind(acc._profile), 2.0],
+	]
+	if not goal.hold:
+		if goal.unlock:
+			_plan.append([acc.unlock, 0.8])
+		if goal.reset:
+			_plan.append([acc.reset_password, 0.8])
+		if goal.must_change:
+			_plan.append([acc.set_must_change.bind(true), 1.0])
+		for g in goal.add:
+			_plan.append([_scroll_to.bind(acc._groups), 0.8])
+			_plan.append([acc.set_group.bind(g, true), 1.2])
+	_plan.append([desk.answer.bind(1 if goal.hold else 0), RESULT_TIME + 1.0])
+
+
+func _scroll_to(c: Control) -> void:
+	var sc: ScrollContainer = desk._dscroll
+	sc.scroll_vertical = int(c.get_global_rect().position.y - sc.get_global_rect().position.y + sc.scroll_vertical - 12.0)
