@@ -8,7 +8,7 @@ tools and improvements to existing systems over new question types. Add a new ti
 one day in three; the other days build things like the items in "Mechanics" below.
 
 **North star (David, Day 8):** a hands-on service desk simulator in the spirit of servicedesk-simulator.com:
-the player does the work in fake tools instead of picking answers. Remote-desktop "VMs" of the user's PC
+the player does the work in fake tools instead of picking answers (product demo seen Day 8: a Tools hub of Directory, Server room, Remote desktop, Computer deployment and Mail admin; tickets you assign to yourself; live calls, voicemail and a company chat with the user; a documentation station; step-by-step hints; streaks and a leaderboard). Take the ideas, never their look, wording or names. Remote-desktop "VMs" of the user's PC
 and the client's servers, an Active Directory / Entra admin console, a PSA ticket system with notes, callers
 on the phone and coworkers in chat, a security (SOC) queue later. Build it in small playable steps, one per day.
 **Pacing:** a ticket should take a real player 1-3 minutes, so a 10-minute shift is about 12-15 tickets. Keep
@@ -21,10 +21,14 @@ SLAs and arrival rates realistic for that whenever new steps or tools make ticke
 
 ## Mechanics (take these first)
 - [x] Pacing: 10-minute shifts, longer SLAs (plus time per extra step), slower arrivals that hold off while 3 tickets sit unopened
-- [ ] Virtual machines, step 1: a "Remote desktop" window onto the user's PC (a mock Windows desktop built from Controls: taskbar, Start, a Settings > Network page, Services, Device Manager, Event Viewer). Use it for the network and printer tickets' fix steps: the player finds and clicks the actual fix (e.g. restart the DHCP Server service on DC01) instead of choosing an option
-- [ ] Virtual machines, step 2: a VM list (PC-USER, DC01, PRINT01, FW01) to connect to; each ticket says which machines are involved, and connecting to the wrong one wastes time
-- [ ] Virtual machines, step 3: Active Directory Users and Computers on DC01 (find user, unlock, reset password, group membership) used by lockout and share-access tickets
-- [ ] Virtual machines, step 4: Services / Event Viewer / Task Manager actions with real consequences (stop the wrong service and another ticket arrives)
+- [ ] Tools hub, step 1: a Tools button (and T key) opens a hub of admin tools beside the ticket. First tool: Directory (users: profile, groups, licences, devices, sign-in methods). Lockout and share-access tickets are then fixed by doing it there (find the user, unlock / reset, add them to the right group) instead of picking an option; the ticket checks the result
+- [ ] Remote desktop, step 1: from the Tools hub, connect to the user's PC (pick it from their devices; the admin login is in the docs). A mock Windows desktop built from Controls: taskbar, Settings, Services, Device Manager, a web browser with a vendor driver page. First used by a new "headset/printer driver" ticket: find the model, download and install the right driver
+- [ ] Server room: an overview of the client's network (ISP link and latency, firewall, switches, servers, each with a status). Network tickets' fix step happens here (restart the DHCP Server service on DC01, fix the DNS forwarder, check the ISP link) instead of an option list
+- [ ] Chat with the user: tickets can start with missing details; ask the user in a chat panel (pick from a few questions; wrong or vague ones cost time) to get the model number, error text or when it started
+- [ ] Documentation: a docs panel per client (servers and IPs, printer table, SOPs, escalation contacts, where credentials live) that tickets rely on; replaces the "documentation wiki" upgrade
+- [ ] Hints: a "Reveal next step" button on each ticket; each reveal cuts that ticket's pay
+- [ ] Remote desktop, step 2: Services / Event Viewer / Task Manager actions with real consequences (stop the wrong service and a new ticket arrives)
+- [ ] New starter, end to end: create the account in Directory, assign licence and groups, deploy a PC (pick the image and run the task sequence), then hand over
 - [x] Virtual PC terminal, step 1: on network tickets, the evidence starts hidden and the player types real commands (ipconfig, ping, nslookup, tracert) into a simulated command prompt to reveal it. Unknown commands get a realistic error
 - [x] Multi-step tickets, step 1: network tickets are diagnose, then fix (the fix step reveals server/router evidence), paying for each step
 - [x] Multi-step tickets, step 2: add a verify step (after the fix the command prompt shows the healed network; the player runs the test that proves it)
@@ -41,7 +45,7 @@ SLAs and arrival rates realistic for that whenever new steps or tools make ticke
 - [ ] Phone queue: a ringing call that must be picked up within 15s or it becomes a P2 voicemail ticket
 - [ ] Upgrades shop between shifts: spend career cash on RMM (+10s SLA), password self-service (fewer lockouts), documentation wiki (hint button)
 - [ ] Client roster: each client has a contract value and happiness; breaching one client repeatedly loses only that contract
-- [ ] Combo streak: consecutive correct answers multiply pay, shown in the top bar
+- [ ] Combo streak: consecutive correct answers multiply pay, shown in the top bar; a daily-play streak shown on the leaderboard
 - [ ] Hire a Tier 1 tech: auto-resolves P4 tickets slowly in the background, costs wages per shift
 - [ ] Daily challenge: same seeded shift for everyone each day, separate leaderboard
 - [ ] Touch-friendly layout tweaks for phones
