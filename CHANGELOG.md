@@ -4,6 +4,7 @@
 - Lock it down yourself: MFA fatigue tickets now open an admin console. Tick every action the account needs, then Apply
 - First read the sign-in logs: did MFA hold, or did the attacker get in? Then reset, revoke, remove their Authenticator and their sneaky inbox rule, but leave the user's own rules alone
 - Miss a must-do step or tick something harmful (like turning MFA off) and the ticket escalates. Keys 1-9 tick actions on a keyboard, Enter applies
+- Calmer shifts: a shift now lasts ten minutes, new tickets arrive every 35-50 seconds instead of every 10-18, and hold off while three sit unopened, and SLAs are longer, with extra time for every step a ticket has
 
 ## Day 7 — 2026-11-15
 - Printers get a proper diagnosis: "Printer not printing" tickets now have two steps. First work out whether it's the print queue, the network or the printer itself, then pick the fix

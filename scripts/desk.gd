@@ -9,10 +9,13 @@ const Tickets := preload("res://scripts/tickets.gd")
 const UI := preload("res://scripts/ui.gd")
 const Terminal := preload("res://scripts/terminal.gd")
 
-const SHIFT_SECONDS := 420.0           # 8:00am to 5:00pm in seven real minutes
+const SHIFT_SECONDS := 600.0           # 8:00am to 5:00pm in ten real minutes
 const START_HOUR := 8.0
 const END_HOUR := 17.0
-const SLA := {1: 120.0, 2: 180.0, 3: 240.0, 4: 300.0}  # real seconds
+const SLA := {1: 180.0, 2: 270.0, 3: 360.0, 4: 480.0}  # real seconds, for a one-step ticket
+const SLA_PER_STEP := 75.0             # extra time for each later step (diagnose, fix, verify all take work)
+const SPAWN_GAP := [50.0, 36.0]        # seconds between arrivals, start to end of the shift
+const MAX_UNREAD := 3                  # arrivals hold off while this many tickets wait unopened
 const PAY := {1: 300, 2: 200, 3: 120, 4: 80}
 const REP_WRONG := 8.0
 const REP_BREACH := 12.0
@@ -111,7 +114,7 @@ func start(seed_value := -1) -> void:
 	correct = 0
 	breaches = 0
 	_end_reason = ""
-	_next_spawn = 3.0
+	_next_spawn = 20.0 / spawn_scale
 	running = true
 	visible = true
 	_show_ticket({})
@@ -129,20 +132,25 @@ func _process(delta: float) -> void:
 	_next_spawn -= delta
 	if _next_spawn <= 0.0:
 		var progress := elapsed / SHIFT_SECONDS
-		_next_spawn = lerpf(18.0, 10.0, progress) / spawn_scale
-		if queue.size() < MAX_QUEUE:
+		_next_spawn = lerpf(SPAWN_GAP[0], SPAWN_GAP[1], progress) * gen.rng.randf_range(0.7, 1.3) / spawn_scale
+		var unread := queue.filter(func(q: Dictionary) -> bool: return not q.get("seen", false)).size()
+		if queue.size() < MAX_QUEUE and unread < MAX_UNREAD:
 			_spawn()
+		else:  # held back: try again soon rather than after a whole gap
+			_next_spawn = 5.0 / spawn_scale
 
 	for t in queue.duplicate():
 		t.age += delta
-		var left: float = SLA[t.priority] - t.age
+		var left: float = t.sla - t.age
 		var bar: ProgressBar = t.row.get_meta("bar")
-		bar.value = clampf(left / SLA[t.priority] * 100.0, 0.0, 100.0)
+		bar.value = clampf(left / t.sla * 100.0, 0.0, 100.0)
 		bar.modulate = Color(1, 0.3, 0.3) if left < 10.0 else Color.WHITE
 		if left < 10.0 and left > 0.0 and not t.get("warned", false):
 			t.warned = true
 			_sfx("warn")
-		(t.row.get_meta("time") as Label).text = "%ds" % maxi(0, ceili(left))
+		var secs := maxi(0, ceili(left))
+		@warning_ignore("integer_division")
+		(t.row.get_meta("time") as Label).text = "%d:%02d" % [secs / 60, secs % 60]
 		if left <= 0.0:
 			_breach(t)
 
@@ -198,7 +206,7 @@ func _resolve(ok: bool, i: int) -> void:
 		solved += 1
 	var pay := 0
 	if ok:
-		var left_frac: float = clampf(1.0 - current.age / SLA[current.priority], 0.0, 1.0)
+		var left_frac: float = clampf(1.0 - current.age / current.sla, 0.0, 1.0)
 		var share: float = STEP_PAY if current.has("steps") else 1.0
 		pay = int(round(PAY[current.priority] * share * (1.0 + 0.5 * left_frac) / 10.0)) * 10
 		cash += pay
@@ -293,6 +301,7 @@ func _spawn() -> void:
 	t.id = _next_id
 	_next_id += 1
 	t.age = 0.0
+	t.sla = SLA[t.priority] + SLA_PER_STEP * t.get("steps", []).size()
 	t.row = _make_row(t)
 	queue.append(t)
 	_queue_list.add_child(t.row)
@@ -338,7 +347,7 @@ func _most_urgent() -> Dictionary:
 	var best: Dictionary = {}
 	var best_left := INF
 	for t in queue:
-		var left: float = SLA[t.priority] - t.age
+		var left: float = t.sla - t.age
 		if left < best_left:
 			best_left = left
 			best = t
@@ -375,6 +384,8 @@ func show_queue() -> void:
 
 func _show_ticket(t: Dictionary) -> void:
 	current = t
+	if not t.is_empty():
+		t.seen = true  # opened at least once (unread tickets hold off new arrivals)
 	_answered = false
 	_feedback.visible = false
 	if not t.is_empty() or queue.is_empty():

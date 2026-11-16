@@ -51,8 +51,8 @@ func start(m: Node) -> void:
 func _start_shift() -> void:
 	main.title.visible = false
 	main.summary.visible = false
-	desk.spawn_scale = 2.4
-	desk.clock_scale = 9.0   # 8am to 5pm in ~47s, leaving time for the shift report
+	desk.spawn_scale = 5.0
+	desk.clock_scale = 12.8  # 8am to 5pm in ~47s, leaving time for the shift report
 	desk.first_kind = "mfa"  # Day 8: open on an MFA ticket: diagnose, then contain it in the admin console
 	desk.start(7)
 	_auto = true
