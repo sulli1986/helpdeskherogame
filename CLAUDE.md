@@ -35,6 +35,7 @@ Godot 4.5 web game: an MSP helpdesk sim, hosted on bunny.net. Every day an agent
 10. Commit to `main` with message `Day N: <change>` and push. CI deploys.
 
 ## Don't
+- **Originality:** other helpdesk simulators may inspire concepts, but never copy their names, feature or screen names, UI layout, artwork, wording, characters or ticket text, and never name or link them in anything players see. Use the roadmap's own names (Toolbox, Accounts, Remote Control, Network Map, Imaging Bench, Mail Console, Messages, Client Wiki, Ask a Senior).
 - Google AdSense (`ca-pub-1544955300869521`) loads only on content pages: the welcome page `/` and `/privacy.html` (`tools/welcome.py`) and `/days/index.html` (`tools/days_index.py`); `tools/seo.py` writes `ads.txt`. The game is `/play.html`: never put AdSense on the game screen (policy: no ads on screens without publisher content).
 - Don't commit secrets. Bunny keys live in GitHub secrets/vars only.
 - Don't break old saves: older day builds share the database and send no newer fields; the server ignores out-of-order saves via `seq`.
