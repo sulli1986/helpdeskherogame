@@ -1,5 +1,10 @@
 # Changelog
 
+## Day 10 — 2026-11-18
+- Remote onto their PC: new scanner tickets are fixed in Remote Control, a Toolbox app in its own tab. Connect to the caller's PC (not their namesake's), then use its Device Manager, Settings and browser
+- Check the hardware ID in Device Manager and the processor in Settings, then install the vendor's driver for that exact model: x64 or Arm. Users don't always name the right model
+- No Arm driver for that scanner? Install nothing and hold. Every install counts: the "driver updater" ad, the wrong package or anything on the wrong PC escalates the ticket
+
 ## Day 9 — 2026-11-17
 - Do the fix yourself: lockout and file-access tickets are now worked in Accounts, a Toolbox app in its own tab beside the ticket. Tap the Accounts tab or press T, then come back to the Ticket tab to close it
 - Find the right user (watch for colleagues with the same first name), check their mobile on file against the callback, then unlock, reset and require a new password at next sign-in

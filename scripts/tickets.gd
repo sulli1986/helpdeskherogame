@@ -13,7 +13,7 @@ extends RefCounted
 ## New ticket types: add a _make_<kind>() and list it in KINDS. Keep answers technically right;
 ## the players are often real IT people.
 
-const KINDS := ["phish", "lockout", "share", "printer", "network", "licence", "mfa"]
+const KINDS := ["phish", "lockout", "share", "printer", "network", "licence", "mfa", "driver"]
 
 const CLIENTS := [
 	["Greenfield Wines", "greenfieldwines.com"],
@@ -52,7 +52,7 @@ func make(kind := "") -> Dictionary:
 	t["kind"] = kind
 	t["client"] = ctx.client
 	t["user"] = ctx.user
-	if not t.has("acct"):  # Accounts tickets keep "Done" / "Hold" in that order
+	if not t.has("acct") and not t.has("rc"):  # Toolbox tickets keep "Done" / "Hold" in that order
 		_shuffle_options(t)
 	for st in t.get("steps", []):
 		if st.has("options"):  # console steps ("actions") keep their admin-console order
@@ -565,6 +565,79 @@ func _make_mfa(c: Dictionary) -> Dictionary:
 				"Reset the password: the attacker knows it. MFA held and nothing was changed, so there's nothing of theirs to remove; revoking sessions or blocking sign-in is extra caution, not required. Leave the user's own Newsletters rule, and never weaken MFA or trust the attacker's IP. Conditional Access or phishing-resistant MFA would stop these prompts."),
 		}],
 	}
+
+
+# ---------------------------------------------------------------- scanner driver
+## Done in Toolbox > Remote Control: connect to the caller's PC (not their namesake's), read the
+## hardware ID in Device Manager and the processor in Settings > About, then install the vendor
+## driver for that model and architecture. Hold when the PC is ARM-based and the model has no
+## ARM64 driver (x64 drivers can't load on Windows on Arm).
+func _make_driver(c: Dictionary) -> Dictionary:
+	var prefix: String = c.domain.substr(0, 3).to_upper()
+	var models: Array = [
+		{"model": "DS-410", "pid": "0410", "archs": ["x64", "x86"]},
+		{"model": "DS-410W", "pid": "0411", "archs": ["x64"]},
+		{"model": "DS-620", "pid": "0620", "archs": ["x64", "x86"]},
+	]
+	for m in models:
+		if rng.randf() < 0.5:
+			m.archs.insert(1, "ARM64")
+	var m: Dictionary = _pick(models)
+	var arch := "ARM64" if rng.randf() < 0.4 else "x64"
+	var hold: bool = arch == "ARM64" and not "ARM64" in m.archs
+	# The caller's PC, a colleague with the same first name, and two others
+	var people: Array = [c.user, "%s %s" % [c.first, _pick(LAST.filter(func(l: String) -> bool: return l != c.last))]]
+	while people.size() < 4:
+		var n := "%s %s" % [_pick(FIRST), _pick(LAST)]
+		if not n in people and not n.begins_with(c.first + " "):
+			people.append(n)
+	var nums: Array = range(1, 30)
+	var pcs: Array = []
+	for i in people.size():
+		var a: String = arch if i == 0 else ("ARM64" if rng.randf() < 0.3 else "x64")
+		pcs.append({
+			"name": "%s-PC%02d" % [prefix, nums.pop_at(rng.randi() % nums.size())], "user": people[i], "arch": a,
+			"cpu": "Snapdragon(R) X Plus - X1P42100 - Qualcomm(R) Oryon(TM) CPU   3.24 GHz" if a == "ARM64"
+				else _pick(["13th Gen Intel(R) Core(TM) i5-1345U   1.60 GHz", "AMD Ryzen 5 7530U with Radeon Graphics   2.00 GHz", "12th Gen Intel(R) Core(TM) i7-12700   2.10 GHz"]),
+			"has_device": i == 0,
+		})
+	var target: String = pcs[0].name
+	_shuffle(pcs)  # the caller isn't always first in the list
+	var said: String = "DS-620" if m.model == "DS-620" else "DS-410"  # users drop the W off the box
+	var rc := {
+		"pcs": pcs, "vendor": "Kestrel", "site": "support.kestrelscan.com",
+		"device": {"name": "Kestrel Scanner", "vid": "2F7A", "pid": m.pid},
+		"models": models, "installs": [],
+		"goal": {"hold": hold, "pc": target, "model": m.model, "arch": arch,
+			"hold_why": "the PC is ARM-based and Kestrel has no ARM64 driver for the %s. x64 drivers can't load on Windows on Arm" % m.model},
+	}
+	return {
+		"priority": 3,
+		"subject": "New scanner isn't working",
+		"body": "%s: \"I plugged in our new Kestrel %s scanner but my PC won't find it. The scan app just says no scanner found.\"" % [c.user, said],
+		"info_title": "Call notes",
+		"info": "Caller:    %s, signed in on their PC now\nDevice:    Kestrel %s (so they say), USB, plugged in today\nSymptom:   scan app: \"No scanner found\"\nDrivers:   %s (vendor site)\nAccess:    they're happy for us to remote on" % [c.user, said, rc.site],
+		"rc": rc,
+		"question": "On the Remote Control tab (T): install the right driver, or hold",
+		"options": [
+			"Done: the right driver is installed and the scanner works",
+			"Hold: install nothing; no driver exists for this PC. Tell the client and raise it with the vendor",
+		],
+		"answer": 1 if hold else 0,
+		"explain": ("Device Manager shows Code 28 (no driver) with hardware ID PID_%s, which the vendor page says is the %s, and Settings shows an ARM-based processor. There's no ARM64 driver for it, and x64 drivers (kernel or user-mode) can't load on Windows on Arm, which needs ARM64 drivers: tell the client, ask Kestrel about an Arm driver, or swap the scanner for one that supports Arm." % [m.pid, m.model]
+			if hold else
+			"Device Manager shows Code 28 (no driver) with hardware ID PID_%s: that's the %s%s. Settings › About says %s, so the %s package. Always get drivers from the vendor's own site, never a \"driver updater\" ad." % [
+				m.pid, m.model, ", whatever the caller calls it" if said != m.model else "",
+				"ARM-based processor" if arch == "ARM64" else "x64-based processor", "ARM64" if arch == "ARM64" else "x64"]),
+	}
+
+
+func _shuffle(a: Array) -> void:
+	for i in range(a.size() - 1, 0, -1):
+		var j := rng.randi_range(0, i)
+		var tmp = a[i]
+		a[i] = a[j]
+		a[j] = tmp
 
 
 # ---------------------------------------------------------------- helpers

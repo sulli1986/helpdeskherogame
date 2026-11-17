@@ -90,6 +90,10 @@ func _check(kind: String, t: Dictionary) -> void:
 		_check_acct(kind, t)
 		for u in t.acct.users:
 			text += " " + " ".join([u.name, u.title, u.upn, u.device, u.licence, " ".join(u.groups)]).to_lower()
+	if t.has("rc"):
+		_check_rc(kind, t)
+		for pc in t.rc.pcs:
+			text += " " + " ".join([pc.name, pc.user, pc.cpu]).to_lower()
 	if t.has("term"):
 		var Terminal = load("res://scripts/terminal.gd")
 		if not t.has("prompt"):
@@ -186,6 +190,49 @@ func _check_acct(kind: String, t: Dictionary) -> void:
 			break
 	if A.check(c, a.goal.hold).is_empty():
 		_fail(kind, "changing another user wasn't caught")
+
+
+## Toolbox > Remote Control tickets: Done / Hold; the right install must pass, nothing must fail,
+## and installing on the wrong PC, the wrong model or arch, or the ad must each be caught.
+func _check_rc(kind: String, t: Dictionary) -> void:
+	var R = load("res://scripts/remote.gd")
+	var r: Dictionary = t.rc
+	var goal: Dictionary = r.goal
+	if t.options.size() != 2 or t.answer != (1 if goal.hold else 0):
+		_fail(kind, "rc options must be Done / Hold, answer matching goal.hold")
+	var with_dev: Array = r.pcs.filter(func(pc: Dictionary) -> bool: return pc.has_device)
+	if with_dev.size() != 1 or with_dev[0].name != goal.pc or with_dev[0].user != t.user or with_dev[0].arch != goal.arch:
+		_fail(kind, "rc: the scanner must be on the caller's PC only, matching goal")
+	var m: Dictionary = {}
+	for x in r.models:
+		if x.model == goal.model:
+			m = x
+	if m.is_empty() or m.pid != r.device.pid:
+		_fail(kind, "rc: device PID doesn't match the goal model")
+		return
+	if goal.hold != (not goal.arch in m.archs):
+		_fail(kind, "rc: hold must mean no driver for this arch")
+	if R.check(r, true).is_empty() != goal.hold or R.check(r, false).is_empty():
+		_fail(kind, "rc: untouched PC judged wrongly")
+	var right := "%s|%s" % [goal.model, goal.arch]
+	var bad: Array = [{"pc": goal.pc, "pkg": "fixer"}]
+	for pc in r.pcs:
+		if pc.name != goal.pc:
+			bad.append({"pc": pc.name, "pkg": "%s|%s" % [goal.model, pc.arch]})
+	for x in r.models:
+		for a in x.archs:
+			if "%s|%s" % [x.model, a] != right:
+				bad.append({"pc": goal.pc, "pkg": "%s|%s" % [x.model, a]})
+	for b in bad:  # each wrong install alone (plus the right one when there is one) must fail
+		var c: Dictionary = r.duplicate(true)
+		c.installs = [b] if goal.hold else [b, {"pc": goal.pc, "pkg": right}]
+		if R.check(c, goal.hold).is_empty():
+			_fail(kind, "rc: wrong install %s wasn't caught" % str(b))
+	if not goal.hold:
+		var ok: Dictionary = r.duplicate(true)
+		ok.installs = [{"pc": goal.pc, "pkg": right}]
+		if not R.check(ok, false).is_empty() or R.check(ok, true).is_empty():
+			_fail(kind, "rc: right install doesn't pass: %s" % str(R.check(ok, false)))
 
 
 func _check_options(kind: String, opts: Array, answer: int) -> void:

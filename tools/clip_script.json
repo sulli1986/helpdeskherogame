@@ -1,9 +1,9 @@
 {
- "day": 9,
+ "day": 10,
  "lines": [
-  {"text": "Locked out? Don't pick an answer. Fix it yourself."},
-  {"text": "Open the Toolbox, find the caller in Accounts, and check their mobile on file.", "at": 3.4},
-  {"text": "It matches. Unlock, reset, and make them pick a new password.", "at": 8.4},
-  {"text": "Touch the wrong account, or trust a fake caller, and it escalates.", "at": 11.8}
+  {"text": "New scanner won't work? Remote onto their PC and fix it."},
+  {"text": "Pick the caller's computer, then check Device Manager for the hardware ID.", "at": 3.4},
+  {"text": "Settings says x sixty-four, not Arm. Grab that exact driver.", "at": 8.6},
+  {"text": "Skip the driver updater ad. That one escalates.", "at": 12.8}
  ]
 }

@@ -52,8 +52,8 @@ func _start_shift() -> void:
 	main.summary.visible = false
 	desk.spawn_scale = 4.0
 	desk.clock_scale = 8.0   # the clock visibly moves, but the shift doesn't end in the clip
-	desk.first_kind = "lockout"  # Day 9: open on a lockout: check the caller and fix it in Toolbox > Accounts
-	desk.start(11)  # Day 9: a lockout that checks out, fixed in Accounts
+	desk.first_kind = "driver"  # Day 10: open on a scanner driver ticket, fixed in Toolbox > Remote Control
+	desk.start(34)  # Day 10: the caller says DS-410, the hardware ID says DS-410W; x64 PC
 	_auto = true
 	_step_t = 2.8  # the hook line plays over the first ticket
 
@@ -103,6 +103,10 @@ func _process(delta: float) -> void:
 		desk.current.demo_planned = true
 		_plan_accounts(desk.current)
 		_step_t = 0.2
+	elif desk.current.has("rc") and not desk.current.get("demo_planned", false):
+		desk.current.demo_planned = true
+		_plan_remote(desk.current)
+		_step_t = 0.2
 	elif desk.current.has("actions"):
 		# Day 8: tick the actions the account needs one by one, then Apply.
 		for i in desk.current.actions.size():
@@ -142,6 +146,34 @@ func _plan_accounts(t: Dictionary) -> void:
 			_plan.append([_scroll_to.bind(acc._groups), 0.8])
 			_plan.append([acc.set_group.bind(g, true), 1.2])
 	_plan.append([desk.answer.bind(1 if goal.hold else 0), RESULT_TIME + 1.0])
+
+
+## Day 10: Remote Control: connect to the caller's PC, read the hardware ID and the processor,
+## install the matching driver from the vendor page, see it working, then close it as Done.
+func _plan_remote(t: Dictionary) -> void:
+	var rem: Node = desk._remote
+	var goal: Dictionary = t.rc.goal
+	_plan = [
+		[desk.show_tab.bind("remote"), 1.6],               # the PC list: pick the caller's, not the namesake's
+		[rem.connect_to.bind(goal.pc), 1.2],
+		[rem.show_props, 0.1],
+		[_scroll_to_end, 3.0],                            # Code 28, hardware ID PID_...
+		[rem.open_app.bind("settings"), 0.1],
+		[_scroll_to_end, 2.2],                            # x64 or ARM-based
+		[rem.open_app.bind("browser"), 0.1],
+		[func() -> void: _scroll_to(rem.pkg_buttons.get("%s|%s" % [goal.model, goal.arch], rem)), 2.4],
+	]
+	if not goal.hold:
+		_plan.append([rem.install.bind("%s|%s" % [goal.model, goal.arch]), 1.4])
+		_plan.append([_scroll_to_end, 1.0])
+		_plan.append([rem.open_app.bind("devmgr"), 0.1])
+		_plan.append([_scroll_to_end, 1.6])
+	_plan.append([desk.answer.bind(1 if goal.hold else 0), RESULT_TIME + 1.0])
+
+
+func _scroll_to_end() -> void:
+	var sc: ScrollContainer = desk._tool_scroll
+	sc.scroll_vertical = int(sc.get_v_scroll_bar().max_value)
 
 
 func _scroll_to(c: Control) -> void:
