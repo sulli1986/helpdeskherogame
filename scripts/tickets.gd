@@ -133,9 +133,9 @@ func _make_lockout(c: Dictionary) -> Dictionary:
 		"subject": "Locked out of my account",
 		"body": "%s (%s) is on the phone: \"I've been locked out. I think I forgot my password over the holidays, and I've got a meeting in ten minutes!\"" % [c.user, title],
 		"info_title": "Call notes",
-		"info": "Caller:     says they're %s (%s)\nCallback:   we rang the mobile ending %s that the caller gave us;\n            they answered and confirmed the request\nPolicy:     only act if the callback number matches the mobile\n            on file (Toolbox > Accounts)" % [c.user, title, rang],
+		"info": "Caller:     says they're %s (%s)\nCallback:   we rang the mobile ending %s that the caller gave us;\n            they answered and confirmed the request\nPolicy:     only act if the callback number matches the mobile\n            on file (Accounts tab)" % [c.user, title, rang],
 		"acct": acct,
-		"question": "Check the caller in the Toolbox (T), fix it in Accounts, or refuse",
+		"question": "Check the caller on the Accounts tab (T) and fix it there, or refuse",
 		"options": [
 			"Done: I've fixed the account in Accounts",
 			"Refuse: touch nothing, call back on the number on file, flag to security",
@@ -168,7 +168,7 @@ func _make_share(c: Dictionary) -> Dictionary:
 		"info_title": "Request",
 		"info": "Share:     \\\\FS01\\%s\nNTFS:      GG_%s_Read (Read & execute), GG_%s_Modify (Modify)\nAsked for: %s access for %s\n%s" % [dept, dept, dept, "edit" if edit else "read-only", c.user, approval_line],
 		"acct": acct,
-		"question": "Grant it in the Toolbox (T) under Accounts, or hold it",
+		"question": "Grant it on the Accounts tab (T), or hold it",
 		"options": [
 			"Done: I've granted it in Accounts",
 			"Hold: change nothing, get the %s manager's approval first" % dept,

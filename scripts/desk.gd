@@ -1,7 +1,8 @@
 extends Control
 ## One helpdesk shift. Tickets queue on the left (top in portrait), the open ticket on the right.
 ## Answer with the option buttons or keys 1-4 (admin-console steps: 1-9 tick, Enter applies), Enter for the next ticket, Tab / arrows to switch.
-## T opens the Toolbox (Accounts) on tickets that are fixed there; its options are then "Done" / "Hold".
+## Toolbox: each tool is its own tab beside the Ticket tab (like a separate admin app). T switches
+## between the ticket and Accounts. Tickets fixed in Accounts are closed on the Ticket tab with "Done" / "Hold".
 
 signal shift_ended(stats: Dictionary)
 signal cash_earned(amount: int, resolved: bool)  # resolved: the ticket is closed (not just one step)
@@ -88,8 +89,12 @@ var _view_queue := false       # compact only: showing the queue screen rather t
 var _back: Button              # compact only: "< Queue (n)" above the ticket
 var _next_btn: Button          # under the result: next ticket / next step
 var _action_boxes: Array = []  # admin-console steps: one CheckBox per action, in current.actions order
-var _toolbox_btn: Button       # tickets with "acct": opens Toolbox > Accounts (T)
-var _accounts: Node            # scripts/accounts.gd, under the evidence
+var _tabs: HBoxContainer       # Toolbox tabs: Ticket, Accounts (later: Remote Control, Network Map...)
+var _tab_btns := {}            # tab name -> Button
+var _tab := "ticket"           # the tab on show; each ticket remembers its own in t.tab
+var _tool_scroll: ScrollContainer  # holds the tool tabs' content
+var _accounts: Node            # scripts/accounts.gd, the Accounts tab
+var _tool_empty: Label         # Accounts tab on a ticket that doesn't need it
 
 
 func _ready() -> void:
@@ -177,6 +182,7 @@ func answer(i: int) -> void:
 	if i < 0 or i >= opts.size():
 		return
 	if current.has("acct"):  # Toolbox tickets: "Done" or "Hold", judged on what was changed in Accounts
+		show_tab("ticket")  # the result shows on the ticket
 		var problems: Array = Accounts.check(current.acct, i == opts.size() - 1)
 		if not problems.is_empty():
 			current.explain = "%s.\n%s" % [".\n".join(problems), current.explain]
@@ -186,23 +192,35 @@ func answer(i: int) -> void:
 	_resolve(i == current.answer, i)
 
 
-## Show or hide Toolbox > Accounts on the open ticket (button or T).
+## T: flip between the Ticket tab and the Accounts tab.
 func toggle_toolbox() -> void:
-	if current.is_empty() or not current.has("acct") or not running:
-		return
-	current.toolbox_open = not current.get("toolbox_open", false)
-	_show_toolbox()
+	show_tab("accounts" if _tab == "ticket" else "ticket")
 
 
-func _show_toolbox() -> void:
-	var has: bool = not current.is_empty() and current.has("acct")
-	var open: bool = has and current.get("toolbox_open", false)
-	_toolbox_btn.visible = has
-	_toolbox_btn.text = ("Close Toolbox" if open else "Open Toolbox: Accounts") + ("" if _touch else "   (T)")
-	_accounts.visible = open
-	if open:
-		_accounts.touch = _touch
-		_accounts.open(current.acct, current.client, not _answered)
+## Switch the work area to a tab: the ticket itself, or one of the Toolbox tools.
+func show_tab(name: String) -> void:
+	if current.is_empty() or not running:
+		name = "ticket"
+	_tab = name
+	if not current.is_empty():
+		current.tab = name
+	_tabs.visible = not current.is_empty()
+	_dscroll.visible = name == "ticket"
+	_tool_scroll.visible = name != "ticket"
+	for k in _tab_btns:
+		var b: Button = _tab_btns[k]
+		var on: bool = k == name
+		b.add_theme_stylebox_override("normal", UI.box(UI.ROW_SEL if on else UI.ROW, 6, 8, UI.ACCENT if on else Color(0, 0, 0, 0)))
+		b.add_theme_color_override("font_color", UI.TEXT if on else UI.MUTED)
+	var needs: bool = not current.is_empty() and current.has("acct")
+	_tab_btns.ticket.text = "Ticket #%d" % current.id if not current.is_empty() else "Ticket"
+	_tab_btns.accounts.text = ("Accounts  ●" if needs and name != "accounts" else "Accounts") + ("" if _touch else "  (T)")
+	if name == "accounts":
+		_accounts.visible = needs
+		_tool_empty.visible = not needs
+		if needs:
+			_accounts.touch = _touch
+			_accounts.open(current.acct, current.client, not _answered)
 
 
 ## Admin console steps: apply the ticked actions. Right when every must-do action is ticked and
@@ -350,6 +368,7 @@ func _breach(t: Dictionary) -> void:
 	_sfx("wrong")
 	if t.id == current.get("id", -1) and not _answered:
 		_answered = true
+		show_tab("ticket")
 		_mark_options(-1)
 		_term_input.release_focus()
 		_term_input.editable = false
@@ -427,7 +446,7 @@ func _show_ticket(t: Dictionary) -> void:
 		row.add_theme_stylebox_override("panel", UI.box(UI.ROW, 6, 10))
 	if t.is_empty():
 		_detail.visible = false
-		_accounts.visible = false
+		show_tab("ticket")
 		_empty.visible = true
 		_empty.text = "Queue clear. Grab a coffee." if running else ""
 		return
@@ -462,7 +481,8 @@ func _show_ticket(t: Dictionary) -> void:
 	_question.text = t.question
 	if t.has("acct") and not is_same(_accounts.acct, t.acct):
 		_accounts.selected = ""  # a different ticket: start from the user list
-	_show_toolbox()
+	_tool_scroll.scroll_vertical = 0
+	show_tab(t.get("tab", "ticket"))
 	if t.has("term") and t.get("step_no", 1) > 1:
 		_console_to_end()  # the new step's evidence was added at the bottom
 	for c in _opts.get_children():
@@ -762,10 +782,34 @@ func _build() -> void:
 	_back.pressed.connect(show_queue)
 	_back.visible = false
 	dcol.add_child(_back)
+	# Toolbox tabs: the ticket, and each tool in its own tab, like separate admin apps
+	_tabs = HBoxContainer.new()
+	_tabs.add_theme_constant_override("separation", 6)
+	dcol.add_child(_tabs)
+	for k in ["ticket", "accounts"]:
+		var tb := Button.new()
+		tb.focus_mode = Control.FOCUS_NONE
+		tb.custom_minimum_size = Vector2(0, 44 if DisplayServer.is_touchscreen_available() else 34)
+		tb.pressed.connect(show_tab.bind(k))
+		_tabs.add_child(tb)
+		_tab_btns[k] = tb
+	_tool_scroll = ScrollContainer.new()
+	_tool_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	_tool_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_tool_scroll.visible = false
+	var tcol := VBoxContainer.new()
+	tcol.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_tool_scroll.add_child(tcol)
+	_accounts = Accounts.new()
+	_accounts.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_accounts.changed.connect(func() -> void: _sfx("type"))
+	tcol.add_child(_accounts)
+	_tool_empty = UI.wrap(UI.label(tcol, "Accounts: the client's users, groups and sign-in settings. Nothing on this ticket needs a change here.", 15, UI.MUTED))
 	var dscroll := ScrollContainer.new()
 	dscroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	dscroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	dcol.add_child(dscroll)
+	dcol.add_child(_tool_scroll)
 	_dscroll = dscroll
 	var dwrap := VBoxContainer.new()
 	dwrap.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -827,16 +871,6 @@ func _build() -> void:
 		_term_input.placeholder_text = "tap a command below (swipe for more)"
 		_term_input.editable = false
 		_term_input.focus_mode = Control.FOCUS_NONE
-	_toolbox_btn = Button.new()
-	_toolbox_btn.focus_mode = Control.FOCUS_NONE
-	_toolbox_btn.custom_minimum_size = Vector2(0, 48 if _touch else 38)
-	_toolbox_btn.add_theme_color_override("font_color", UI.ACCENT)
-	_toolbox_btn.pressed.connect(toggle_toolbox)
-	_detail.add_child(_toolbox_btn)
-	_accounts = Accounts.new()
-	_accounts.visible = false
-	_accounts.changed.connect(func() -> void: _sfx("type"))
-	_detail.add_child(_accounts)
 	_question = UI.label(_detail, "", 16, UI.ACCENT)
 	_opts = VBoxContainer.new()
 	_opts.add_theme_constant_override("separation", 6)

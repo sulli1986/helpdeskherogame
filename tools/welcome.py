@@ -83,7 +83,7 @@ def welcome(site: str) -> str:
 <li>Tickets arrive in the queue, from P1 (most urgent, shortest SLA) to P4. Work the urgent ones first.</li>
 <li>Open a ticket, read the evidence, then pick your answer with the buttons or keys 1-4.</li>
 <li>Some tickets have several steps (diagnose, fix, verify), and network tickets give you a command prompt to type into. Some fixes happen in an admin console: tick every action the account needs, then Apply.</li>
-<li>Lockouts and access requests are done in the Toolbox (press T or tap Open Toolbox): find the user in Accounts, check their details, make the change, then press Done. If something doesn't check out, change nothing and refuse or hold instead.</li>
+<li>Your tools open in their own tabs beside the ticket, like the separate admin apps a real service desk uses. Lockouts and access requests are done on the Accounts tab (press T or tap it): find the user, check their details, make the change, then go back to the Ticket tab and press Done. If something doesn't check out, change nothing and refuse or hold instead.</li>
 <li>Faster correct fixes pay more. Wrong calls and SLA breaches cost reputation; lose it all and the client walks.</li>
 <li>Press V in the game for what's new, M to mute.</li>
 </ul></section>"""

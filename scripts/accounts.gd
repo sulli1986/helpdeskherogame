@@ -42,7 +42,7 @@ func _init() -> void:
 	_groups = VBoxContainer.new()
 	_groups.add_theme_constant_override("separation", 4)
 	add_child(_groups)
-	UI.wrap(UI.label(self, "Changes apply straight away. Then answer below: Done, or change nothing and refuse / hold.", 13, UI.MUTED))
+	UI.wrap(UI.label(self, "Changes apply straight away. Then close it on the Ticket tab: Done, or change nothing and refuse / hold.", 13, UI.MUTED))
 
 
 func open(a: Dictionary, client: String, enabled := true) -> void:

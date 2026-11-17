@@ -1,7 +1,7 @@
 # Changelog
 
 ## Day 9 — 2026-11-17
-- Do the fix yourself: lockout and file-access tickets now open the Toolbox. Press T (or tap Open Toolbox) and work in Accounts
+- Do the fix yourself: lockout and file-access tickets are now worked in Accounts, a Toolbox app in its own tab beside the ticket. Tap the Accounts tab or press T, then come back to the Ticket tab to close it
 - Find the right user (watch for colleagues with the same first name), check their mobile on file against the callback, then unlock, reset and require a new password at next sign-in
 - Access requests: tick the right group (Read or Modify) and nothing more, or hold if the manager hasn't approved. Change the wrong account, or anything you shouldn't, and the ticket escalates
 

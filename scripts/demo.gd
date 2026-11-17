@@ -126,7 +126,7 @@ func _plan_accounts(t: Dictionary) -> void:
 	var acc: Node = desk._accounts
 	var goal: Dictionary = t.acct.goal
 	_plan = [
-		[desk.toggle_toolbox, 0.1],
+		[desk.show_tab.bind("accounts"), 0.1],
 		[_scroll_to.bind(acc), 1.4],
 		[acc.select.bind(goal.sam), 0.1],
 		[_scroll_to.bind(acc._profile), 4.2],  # "check their mobile on file"
@@ -145,5 +145,5 @@ func _plan_accounts(t: Dictionary) -> void:
 
 
 func _scroll_to(c: Control) -> void:
-	var sc: ScrollContainer = desk._dscroll
+	var sc: ScrollContainer = desk._tool_scroll
 	sc.scroll_vertical = int(c.get_global_rect().position.y - sc.get_global_rect().position.y + sc.scroll_vertical - 12.0)

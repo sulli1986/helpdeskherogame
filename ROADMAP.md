@@ -17,6 +17,8 @@ instead of picking answers. Our own names and design throughout (see "Originalit
 - **Ask a Senior:** a step-by-step nudge that costs part of the ticket's pay
 - Later: a PSA with ticket notes, a security alert queue, streaks and achievements
 Build it in small playable steps, one per day.
+**Toolbox layout (David, Day 9):** each tool opens as its own tab (a separate window on wide screens later) beside the
+Ticket tab, like real IT tooling; never inline inside the ticket. New tools add a tab.
 **Pacing:** a ticket should take a real player 1-3 minutes, so a 10-minute shift is about 12-15 tickets. Keep
 SLAs and arrival rates realistic for that whenever new steps or tools make tickets longer.
 **Site:** more real content pages (guides, glossary) give the ads somewhere to live; see "Site" below.
