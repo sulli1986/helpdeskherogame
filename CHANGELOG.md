@@ -1,5 +1,10 @@
 # Changelog
 
+## Day 11 — 2026-11-19
+- License the new starter yourself: "New starter Monday" tickets are now done in Accounts. Find the starter (not their namesake) and assign their Microsoft 365 licence
+- Pick the cheapest licence that covers their needs: Basic for phone and browser only, Standard for desktop Office apps, Premium when the laptop must be managed with Intune and Defender
+- None spare? If a leaver's mailbox is already a shared mailbox, free their licence and reuse it. No leaver? Hold and get the client's approval to buy one. Never take a licence from someone who still works there
+
 ## Day 10 — 2026-11-18
 - Remote onto their PC: new scanner tickets are fixed in Remote Control, a Toolbox app in its own tab. Connect to the caller's PC (not their namesake's), then use its Device Manager, Settings and browser
 - Check the hardware ID in Device Manager and the processor in Settings, then install the vendor's driver for that exact model: x64 or Arm. Users don't always name the right model

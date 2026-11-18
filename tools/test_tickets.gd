@@ -180,8 +180,18 @@ func _check_acct(kind: String, t: Dictionary) -> void:
 				u.must_change = a.goal.must_change
 				for g in a.goal.add:
 					u.groups.append(g)
+		for u in b.users:  # licence tickets: free the leaver's first, then assign
+			if u.sam == a.goal.get("free", ""):
+				u.licence = "None"
+		for u in b.users:
+			if u.sam == a.goal.sam and a.goal.has("licence"):
+				if A.spare(b, a.goal.licence) < 1:
+					_fail(kind, "no spare %s even after freeing the leaver's" % a.goal.licence)
+				u.licence = a.goal.licence
 		if not A.check(b, false).is_empty() or A.check(b, true).is_empty():
 			_fail(kind, "solved directory doesn't pass: %s" % str(A.check(b, false)))
+	if a.goal.has("licence"):
+		_check_licence(kind, a)
 	# Touching a colleague is always wrong.
 	var c: Dictionary = a.duplicate(true)
 	for u in c.users:
@@ -190,6 +200,60 @@ func _check_acct(kind: String, t: Dictionary) -> void:
 			break
 	if A.check(c, a.goal.hold).is_empty():
 		_fail(kind, "changing another user wasn't caught")
+
+
+## Licence tickets: the stock must match the case (spare / leaver / buy), and every other licence for
+## the starter, or taking one from someone still working there, must be caught.
+func _check_licence(kind: String, a: Dictionary) -> void:
+	var A = load("res://scripts/accounts.gd")
+	var goal: Dictionary = a.goal
+	var spare: int = A.spare(a, goal.licence)
+	if (spare > 0) == (goal.hold or goal.free != ""):
+		_fail(kind, "licence stock doesn't match the case")
+	var tier: int = -1
+	for i in a.skus.size():
+		if a.skus[i].name == goal.licence:
+			tier = i
+	for i in a.skus.size():
+		var s: Dictionary = a.skus[i]
+		if A.spare(a, s.name) < 0:
+			_fail(kind, "more %s in use than owned" % s.name)
+		if i > tier and spare == 0 and A.spare(a, s.name) > 0:
+			_fail(kind, "a higher licence is spare when the needed one isn't (two right answers)")
+	if not goal.hold:  # switching off the onboarding password change must be caught
+		var w: Dictionary = a.duplicate(true)
+		for u in w.users:
+			if u.sam == goal.free:
+				u.licence = "None"
+			if u.sam == goal.sam:
+				u.licence = goal.licence
+				u.must_change = false
+		if A.check(w, false).is_empty():
+			_fail(kind, "turning off the starter's password change wasn't caught")
+	for u in a.users:
+		if u.sam == goal.free and (u.licence != goal.licence or not u.has("left")):
+			_fail(kind, "leaver doesn't hold the needed licence")
+		if u.sam != goal.free and u.has("left"):
+			_fail(kind, "unexpected leaver")
+	for s in a.skus:  # the starter on any other licence is wrong
+		if s.name == goal.licence:
+			continue
+		var w: Dictionary = a.duplicate(true)
+		for u in w.users:
+			if u.sam == goal.sam:
+				u.licence = s.name
+		if A.check(w, false).is_empty() or A.check(w, true).is_empty():
+			_fail(kind, "wrong licence %s wasn't caught" % s.name)
+	for u in a.users:  # taking it from someone who still works there is wrong
+		if u.sam != goal.sam and u.sam != goal.free and u.licence == goal.licence:
+			var w: Dictionary = a.duplicate(true)
+			for x in w.users:
+				if x.sam == u.sam:
+					x.licence = "None"
+				if x.sam == goal.sam:
+					x.licence = goal.licence
+			if A.check(w, false).is_empty():
+				_fail(kind, "taking a colleague's licence wasn't caught")
 
 
 ## Toolbox > Remote Control tickets: Done / Hold; the right install must pass, nothing must fail,

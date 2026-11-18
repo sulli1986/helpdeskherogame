@@ -25,7 +25,7 @@ ABOUT = [
     "You work a shift at a managed service provider (MSP): tickets arrive in a queue with SLA timers, "
     "and you read the evidence and pick the right fix before the client escalates.",
     "Spot phishing emails from their headers, unlock accounts, sort out share access and printers, "
-    "remote onto PCs to install the right scanner driver, choose Microsoft 365 licences, contain MFA fatigue attacks from the sign-in logs, and diagnose "
+    "remote onto PCs to install the right scanner driver, license new starters (freeing a leaver's licence when none are spare), contain MFA fatigue attacks from the sign-in logs, and diagnose "
     "network outages by typing ipconfig, ping, nslookup and tracert into a simulated command prompt, "
     "then fix the server or router and prove the fix worked.",
     "Fast, correct fixes earn cash and reputation; wrong calls and SLA breaches cost you the client. "

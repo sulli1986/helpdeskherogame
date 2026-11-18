@@ -476,28 +476,99 @@ func _network_verify(fault: String, first: String) -> Dictionary:
 
 
 # ---------------------------------------------------------------- M365 licence
+## Done in Toolbox > Accounts: give the new starter the cheapest licence that covers their needs.
+## Sometimes that licence has none spare: free one from a leaver whose mailbox is already a shared
+## mailbox, or (no leaver) hold until the client approves buying one.
+const SKUS := ["Microsoft 365 Business Basic", "Microsoft 365 Business Standard", "Microsoft 365 Business Premium"]
+
+
 func _make_licence(c: Dictionary) -> Dictionary:
-	var shared := rng.randf() < 0.35
-	var name := "%s %s" % [_pick(FIRST), _pick(LAST)]
-	var info := ("Request:  shared inbox accounts@%s\nUsers:    3 staff need to read/send as it\nSize:     ~4 GB expected" % c.domain if shared
-		else "Starter:  %s, starts Monday\nNeeds:    email, desktop Word/Excel/Outlook, Teams\nDevice:   new laptop, must be Intune-managed + Defender" % name)
+	var tier := rng.randi_range(0, 2)
+	var sku: String = SKUS[tier]
+	var stock: String = _pick(["spare", "spare", "leaver", "buy"])
+	var acct := _directory(c, "New starter")
+	var users: Array = acct.users
+	var mgr := ""
+	var guard := 0
+	while mgr == "" and guard < 200:  # someone whose surname isn't in the directory, to avoid mix-ups
+		guard += 1
+		var l: String = _pick(LAST)
+		mgr = "%s %s" % [_pick(FIRST), l]
+		for x in users:
+			if x.name.ends_with(" " + l):
+				mgr = ""
+	if mgr == "":
+		mgr = "the client's manager"
+	var u: Dictionary = users[acct.target]
+	u.licence = "None"
+	u.pwd = "temporary, set by onboarding (starts Monday)"
+	u.must_change = true
+	u.methods = "None yet (registers on day one)"
+	u.groups = ["GG_Staff"]
+	if tier == 0:
+		u.device = "None (no PC, works from their phone)"
+	var free := ""
+	if stock == "leaver":
+		var pool: Array = users.filter(func(x: Dictionary) -> bool: return not x.name.begins_with(c.first + " "))
+		var l: Dictionary = pool[rng.randi() % pool.size()]  # not the namesake: that stays a trap
+		l.licence = sku
+		l.left = "left %d weeks ago. Mailbox converted to a shared mailbox (under 50 GB, no hold, no archive); OneDrive files handed to their manager" % rng.randi_range(2, 6)
+		l.title = "Former staff"
+		l.methods = "Removed at offboarding"
+		l.device = "Returned"
+		l.groups = []
+		free = l.sam
+	var skus: Array = []
+	for k in SKUS:
+		var in_dir := 0
+		for x in users:
+			if x.licence == k:
+				in_dir += 1
+		var spare_n: int = rng.randi_range(1, 3)
+		if SKUS.find(k) >= tier and stock != "spare":
+			spare_n = 0  # nothing spare at or above the tier they need, so there's only one right path
+		var others: int = rng.randi_range(3, 18) if k != SKUS[0] else rng.randi_range(0, 6)
+		skus.append({"name": k, "total": others + in_dir + spare_n, "others": others})
+	acct.skus = skus
+	acct.orig = users.duplicate(true)
+	var short: String = sku.trim_prefix("Microsoft 365 ")
+	acct.goal = {"hold": stock == "buy", "sam": c.sam, "unlock": false, "reset": false, "must_change": true, "add": [],
+		"licence": sku, "free": free,
+		"hold_why": "there's no spare %s, and buying one needs %s's approval" % [short, mgr]}
+	acct.erase("target")
+	var needs: String = [
+		"email and Teams on their phone, Word and Excel in the browser.\n          No PC",
+		"email, Teams, desktop Word, Excel and Outlook on a laptop.\n          The client doesn't use Intune or Defender for Business",
+		"email, Teams, desktop Word, Excel and Outlook. The new laptop\n          must be Intune-managed with Defender for Business",
+	][tier]
+	var why: String = [
+		"Business Basic has email, Teams and the web and mobile Office apps: all they need. Standard and Premium would pay for desktop apps they won't use.",
+		"Desktop Office apps need Business Standard or Premium. Premium adds Intune and Defender for Business, which this client doesn't use, so Standard is the cheapest fit.",
+		"Desktop apps plus Intune and Defender for Business means Business Premium. Standard has the desktop apps but neither of those.",
+	][tier]
+	var leaver_name := ""
+	for x in users:
+		if x.sam == free:
+			leaver_name = x.name
+	var how: String = {
+		"spare": "There was a spare one: assign it to %s, not their namesake." % c.first,
+		"leaver": "None spare, but %s has left and their mailbox is already a shared mailbox under 50 GB with no hold or archive, and their OneDrive files were handed over, so it needs no licence: remove theirs, then assign it to %s." % [leaver_name, c.first],
+		"buy": "None spare and no leaver to free one from, so hold and ask %s to approve buying one. A cheaper licence that doesn't cover the needs isn't a fix, and never take one from someone who still works there." % mgr,
+	}[stock]
 	return {
-		"priority": 4,
-		"subject": "Shared inbox for accounts" if shared else "New starter Monday",
-		"body": ("%s wants a shared accounts@ mailbox for the team." % c.first if shared
-			else "%s: \"%s starts Monday. Can you set them up with everything?\"" % [c.first, name]),
-		"info_title": "Requirements",
-		"info": info,
-		"question": "Which licence?",
+		"priority": 3,
+		"subject": "New starter Monday",
+		"body": "%s (Office Manager): \"%s starts Monday. Their account's set up, can you get them licensed?\"" % [mgr, c.user],
+		"info_title": "Request",
+		"info": "Starter:  %s (account created, no licence yet)\nNeeds:    %s\nPolicy:   the cheapest licence that covers it. Buying more\n          needs %s's approval" % [c.user, needs, mgr],
+		"acct": acct,
+		"question": "License them on the Accounts tab (T), or hold",
 		"options": [
-			"Microsoft 365 Business Premium",
-			"Microsoft 365 Business Standard",
-			"Microsoft 365 Business Basic",
-			"No licence: a shared mailbox under 50 GB doesn't need one",
+			"Done: I've licensed them in Accounts",
+			"Hold: assign nothing, ask %s to approve buying one" % mgr,
 		],
-		"answer": 3 if shared else 0,
-		"explain": ("Shared mailboxes under 50 GB need no licence. Grant Full Access + Send As to the 3 users." if shared
-			else "Desktop apps plus Intune and Defender means Business Premium. Standard has no Intune; Basic has no desktop apps."),
+		"answer": 1 if acct.goal.hold else 0,
+		"explain": "%s %s" % [why, how],
 	}
 
 

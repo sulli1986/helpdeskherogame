@@ -9,6 +9,7 @@ const END_AT := 27.0
 const READ_TIME := 2.4      # seconds "reading" a ticket before answering
 const RESULT_TIME := 1.8    # seconds showing the explanation
 const WRONG_AT := 17.0      # one deliberate wrong call after the feature (shows the penalty)
+const SEED := 6             # Day 11: needs Premium, none spare, a leaver (not the namesake) holds one
 
 var main: Node
 var desk: Node
@@ -52,8 +53,8 @@ func _start_shift() -> void:
 	main.summary.visible = false
 	desk.spawn_scale = 4.0
 	desk.clock_scale = 8.0   # the clock visibly moves, but the shift doesn't end in the clip
-	desk.first_kind = "driver"  # Day 10: open on a scanner driver ticket, fixed in Toolbox > Remote Control
-	desk.start(34)  # Day 10: the caller says DS-410, the hardware ID says DS-410W; x64 PC
+	desk.first_kind = "licence"  # Day 11: open on a new-starter licence ticket, done in Toolbox > Accounts
+	desk.start(SEED)  # Day 11: needs Premium, none spare, a leaver holds one
 	_auto = true
 	_step_t = 2.8  # the hook line plays over the first ticket
 
@@ -145,6 +146,16 @@ func _plan_accounts(t: Dictionary) -> void:
 		for g in goal.add:
 			_plan.append([_scroll_to.bind(acc._groups), 0.8])
 			_plan.append([acc.set_group.bind(g, true), 1.2])
+		if goal.get("free", "") != "":  # Day 11: no spare licence: free the leaver's first
+			_plan.append([_scroll_to.bind(acc._lic_head), 2.2])
+			_plan.append([acc.select.bind(goal.free), 0.1])
+			_plan.append([_scroll_to.bind(acc._profile), 2.6])
+			_plan.append([acc.remove_licence, 1.2])
+			_plan.append([acc.select.bind(goal.sam), 0.1])
+			_plan.append([_scroll_to.bind(acc._profile), 1.2])
+		if goal.has("licence"):
+			_plan.append([acc.assign_licence.bind(goal.licence), 1.2])
+			_plan.append([_scroll_to.bind(acc._lic_head), 1.6])
 	_plan.append([desk.answer.bind(1 if goal.hold else 0), RESULT_TIME + 1.0])
 
 

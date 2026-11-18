@@ -28,7 +28,7 @@ const REP_RIGHT := 2.0
 const STEP_PAY := 0.5                  # multi-step tickets: each step pays this share of the ticket's pay
 const MAX_QUEUE := 8
 const TOOL_ABOUT := {
-	"accounts": "Accounts: the client's users, groups and sign-in settings. Nothing on this ticket needs a change here.",
+	"accounts": "Accounts: the client's users, groups, licences and sign-in settings. Nothing on this ticket needs a change here.",
 	"remote": "Remote Control: connect to one of the client's PCs and work on it. Nothing on this ticket needs it.",
 }
 ## Commands offered as tap-to-run buttons under the prompt on touchscreens.

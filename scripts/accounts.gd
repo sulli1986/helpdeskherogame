@@ -4,8 +4,11 @@ extends VBoxContainer
 ## into the ticket's acct.users; check() compares them with acct.goal when the ticket is answered.
 ## acct = {users: [user], orig: [user] (untouched copy), groups: [String], goal: {...}}
 ## user = {name, sam, upn, title, locked, lock_info, pwd, reset, must_change, mobile, licence,
-##         device, methods, groups: [String]}
-## goal = {hold: bool, sam, unlock: bool, reset: bool, must_change: bool, add: [String], hold_why}
+##         device, methods, groups: [String], left (optional: why they're disabled)}
+## goal = {hold: bool, sam, unlock: bool, reset: bool, must_change: bool, add: [String], hold_why,
+##         licence (optional: the licence the user must end up with), free (optional: the leaver whose
+##         licence may be removed)}
+## acct.skus (licence tickets only) = [{name, total, others}]: others = in use by staff not listed here.
 
 signal changed
 
@@ -20,6 +23,8 @@ var _profile: Label
 var _actions: HFlowContainer
 var _groups: VBoxContainer
 var _title: Label
+var _lic_head: Label
+var _lic: VBoxContainer
 
 
 func _init() -> void:
@@ -38,6 +43,10 @@ func _init() -> void:
 	_actions.add_theme_constant_override("h_separation", 6)
 	_actions.add_theme_constant_override("v_separation", 6)
 	add_child(_actions)
+	_lic_head = UI.label(self, "Licences (whole company)", 13, UI.MUTED)
+	_lic = VBoxContainer.new()
+	_lic.add_theme_constant_override("separation", 4)
+	add_child(_lic)
 	UI.label(self, "Groups (ticked = member)", 13, UI.MUTED)
 	_groups = VBoxContainer.new()
 	_groups.add_theme_constant_override("separation", 4)
@@ -99,6 +108,33 @@ func set_group(g: String, on: bool) -> void:
 	_changed()
 
 
+## Give the open user this licence (it replaces the one they have). Needs one spare.
+func assign_licence(sku: String) -> void:
+	var u := _user(selected)
+	if _enabled and not u.is_empty() and u.licence != sku and spare(acct, sku) > 0:
+		u.licence = sku
+		_changed()
+
+
+func remove_licence() -> void:
+	var u := _user(selected)
+	if _enabled and not u.is_empty() and u.licence != "None":
+		u.licence = "None"
+		_changed()
+
+
+## Unassigned licences of this kind the company has paid for.
+static func spare(a: Dictionary, sku: String) -> int:
+	for s in a.get("skus", []):
+		if s.name == sku:
+			var used: int = s.others
+			for u in a.users:
+				if u.licence == sku:
+					used += 1
+			return s.total - used
+	return 0
+
+
 ## What's wrong with the directory now, given the player either finished ("Done") or held off.
 ## Empty = right. Every change is compared with the untouched copy in acct.orig.
 static func check(a: Dictionary, held: bool) -> Array:
@@ -112,6 +148,8 @@ static func check(a: Dictionary, held: bool) -> Array:
 		if diffs.is_empty():
 			continue
 		if u.sam != goal.sam:
+			if u.sam == goal.get("free", "") and not goal.hold and diffs == ["licence removed"]:
+				continue  # freeing a leaver's licence is part of the job
 			out.append("Changed %s's account too (%s). Nobody asked for that" % [u.name, ", ".join(diffs)])
 			continue
 		touched = true
@@ -123,10 +161,12 @@ static func check(a: Dictionary, held: bool) -> Array:
 		for g in o.groups:
 			if not g in u.groups:
 				out.append("Removed them from %s" % g)
-		if u.reset and not goal.reset:
+		if u.reset and not o.reset and not goal.reset:
 			out.append("Reset a password nobody asked to reset")
-		if u.must_change and not goal.must_change:
+		if u.must_change and not o.must_change and not goal.must_change:
 			out.append("Turned on a password change nobody asked for")
+		if u.licence != o.licence and not goal.has("licence"):
+			out.append("Changed their licence: nobody asked for that")
 	var t := _user_in(a.users, goal.sam)
 	if goal.hold:
 		if touched:
@@ -146,6 +186,8 @@ static func check(a: Dictionary, held: bool) -> Array:
 	for g in goal.add:
 		if not g in t.groups:
 			out.append("%s isn't in %s" % [t.name, g])
+	if goal.has("licence") and t.licence != goal.licence:
+		out.append("%s has %s, but needs %s" % [t.name, "no licence" if t.licence == "None" else t.licence.trim_prefix("Microsoft 365 "), goal.licence.trim_prefix("Microsoft 365 ")])
 	return out
 
 
@@ -163,6 +205,8 @@ static func _diffs(u: Dictionary, o: Dictionary) -> Array:
 	b.sort()
 	if a != b:
 		d.append("groups")
+	if u.licence != o.licence:
+		d.append("licence removed" if u.licence == "None" else "licence changed")
 	return d
 
 
@@ -190,11 +234,19 @@ func _refresh() -> void:
 		c.queue_free()
 	for c in _groups.get_children():
 		c.queue_free()
+	for c in _lic.get_children():
+		c.queue_free()
+	_lic_head.visible = acct.has("skus")
+	_lic.visible = acct.has("skus")
 	if acct.is_empty():
 		return
+	for s in acct.get("skus", []):
+		var n: int = spare(acct, s.name)
+		UI.wrap(UI.label(_lic, "%s:  %d of %d in use, %s" % [s.name.trim_prefix("Microsoft 365 "), s.total - n, s.total,
+			"%d spare" % n if n > 0 else "NONE SPARE"], 13, UI.TEXT if n > 0 else Color(1, 0.75, 0.3)))
 	for u in acct.users:
 		var b := Button.new()
-		b.text = "%s  ·  %s%s" % [u.name, u.title, "   [LOCKED]" if u.locked else ""]
+		b.text = "%s  ·  %s%s" % [u.name, u.title, "   [LOCKED]" if u.locked else ("   [LEFT]" if u.has("left") else "")]
 		b.alignment = HORIZONTAL_ALIGNMENT_LEFT
 		b.focus_mode = Control.FOCUS_NONE
 		b.clip_text = true
@@ -210,7 +262,7 @@ func _refresh() -> void:
 	_profile.text = "\n".join([
 		"Name:        %s (%s)" % [u.name, u.title],
 		"Sign-in:     %s" % u.upn,
-		"Status:      %s" % ("LOCKED OUT, %s" % u.lock_info if u.locked else "Enabled"),
+		"Status:      %s" % ("LOCKED OUT, %s" % u.lock_info if u.locked else ("Disabled: %s" % u.left if u.has("left") else "Enabled")),
 		"Password:    %s" % u.pwd,
 		"Change at next sign-in: %s" % ("Yes" if u.must_change else "No"),
 		"Mobile:      ending %s" % u.mobile,
@@ -222,6 +274,12 @@ func _refresh() -> void:
 	_action("Reset password", reset_password, true)
 	_action("Require change at next sign-in: %s" % ("On" if u.must_change else "Off"),
 		set_must_change.bind(not u.must_change), true)
+	for s in acct.get("skus", []):
+		var short: String = s.name.trim_prefix("Microsoft 365 ")
+		var have: bool = u.licence == s.name
+		_action(("Has %s" % short) if have else "Assign %s" % short, assign_licence.bind(s.name), not have and spare(acct, s.name) > 0)
+	if acct.has("skus"):
+		_action("Remove licence", remove_licence, u.licence != "None")
 	for g in acct.groups:
 		var cb := CheckBox.new()
 		cb.text = g

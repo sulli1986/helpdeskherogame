@@ -1,9 +1,9 @@
 {
- "day": 10,
+ "day": 11,
  "lines": [
-  {"text": "New scanner won't work? Remote onto their PC and fix it."},
-  {"text": "Pick the caller's computer, then check Device Manager for the hardware ID.", "at": 3.4},
-  {"text": "Settings says x sixty-four, not Arm. Grab that exact driver.", "at": 8.6},
-  {"text": "Skip the driver updater ad. That one escalates.", "at": 12.8}
+  {"text": "New starter on Monday? License them yourself."},
+  {"text": "They need desktop apps and a managed laptop, so that's Business Premium.", "at": 3.4},
+  {"text": "None spare? A leaver's mailbox is already shared, so free their licence.", "at": 9.0},
+  {"text": "Then give it to the starter, not their namesake.", "at": 15.0}
  ]
 }
