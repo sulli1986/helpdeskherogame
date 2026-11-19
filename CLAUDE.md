@@ -1,6 +1,6 @@
 # Helpdesk Hero — daily change rules
 
-Godot 4.5 web game: an MSP helpdesk sim, hosted on bunny.net. Every day an agent makes **exactly one** improvement. Sister project of Streetstorm (`sulli1986/dailygamechange`), same pipeline.
+Godot 4.5 web game: an MSP helpdesk sim, hosted on bunny.net. Every day an agent ships an improvement that builds on the game as it is. Sister project of Streetstorm (`sulli1986/dailygamechange`), same pipeline.
 
 ## Layout
 - `scripts/main.gd` — entry point (Control): screens, career state, saves, summary panel
@@ -20,11 +20,12 @@ Godot 4.5 web game: an MSP helpdesk sim, hosted on bunny.net. Every day an agent
 - `tools/test_tickets.gd` — ticket sanity test (structure, answer range, variety, no region-specific terms)
 - `tools/make_clip.sh` — the daily ~27s Short: `clip_text.py` (hook, caption, narration), `clip_voice.py` (voiceover with Piper's public-domain LJ Speech voice, downloaded in CI; renders without a voice if that fails), `make_music.py` (original synthesized backing track), `clip_compose.py` (hook card on frame 0, word-by-word captions, ducked music, end card with the URL)
 - `tools/clip_script.json` — today's voiceover lines (`day` must match today's Day N, else lines are made from the CHANGELOG)
+- `NOTES.md` — the agent's working notes for multi-day work (goal, done, next, gotchas); not player-facing
 - `tools/` — `bunny.sh` (storage helpers), `post_clip.sh`, `days_index.py`, `day_commits.py`, `inject_demo.py`, `inject_analytics.py`
 
 ## Daily change procedure
-1. Decide today's change yourself; there is no roadmap or task list (David, Day 10). Read `VISION.md` (north star and design rules) and `CHANGELOG.md`, look at the game as it is now (code, and a headless/demo run if useful), and pick the one change players would notice and value most today: a new mechanic or tool step, a fix for something clunky or wrong, an improvement to an existing system, or a site page. Follow the design rules: grow the game as a sim, a new ticket type at most one day in three, big features split into steps that are each playable on their own.
-2. Make ONE focused change (one feature or one fix). Keep the diff small and readable.
+1. Decide today's change yourself; there is no roadmap or task list (David, Day 10). Read `VISION.md` (north star and design rules) and `CHANGELOG.md`, look at the game as it is now (code, and a headless/demo run if useful), and pick the one change players would notice and value most today: a new mechanic or tool step, a fix for something clunky or wrong, an improvement to an existing system, or a site page. Follow the design rules: grow the game as a sim and add a new ticket type at most one day in three.
+2. Changes can be any size (David, Day 11): a new system, a rework, or back-end/engine work that lays the groundwork for something bigger over several days, as long as every day still ships something players get and the game still works. Keep the code readable. Anything that spans days goes in `NOTES.md` (goal, done so far, next steps, gotchas, anything David must set up); read it first and keep it current. It's working notes, not a roadmap or task list.
 3. Everything stays code-built: Control nodes, StyleBoxFlat, procedural audio. No binary assets.
 4. Renderer is GL Compatibility, single-threaded web export. Don't add anything needing threads or SharedArrayBuffer.
 5. **Ticket content must be technically correct.** Players include real IT/MSP people. Keep it global and generic: no country- or city-specific businesses, ISPs or slang. Fictional, generic client businesses only (e.g. "Clearwater Dental"); never real company names as clients (vendors like Microsoft/Xero in headers are fine).

@@ -19,7 +19,8 @@ Directions this can grow in (not a to-do list, and not the only options):
 ## Design rules
 **Sim, not quiz:** favour new mechanics, interactive tools and improvements to existing systems over new
 question types. Add a new ticket type at most one day in three (check the last few CHANGELOG entries).
-**Small playable steps:** big features are split across days; each day's step must be playable on its own.
+**Ship every day:** a day's work can be any size, including groundwork for a bigger feature over several days
+(tracked in NOTES.md), but every day must ship something players get, and the game must always work.
 **Toolbox layout (David, Day 9):** each tool opens as its own tab (a separate window on wide screens later)
 beside the Ticket tab, like real IT tooling; never inline inside the ticket. New tools add a tab.
 **Pacing:** a ticket should take a real player 1-3 minutes, so a 10-minute shift is about 12-15 tickets. Keep
