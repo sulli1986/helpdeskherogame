@@ -2,7 +2,7 @@ extends Control
 ## One helpdesk shift. Tickets queue on the left (top in portrait), the open ticket on the right.
 ## Answer with the option buttons or keys 1-4 (admin-console steps: 1-9 tick, Enter applies), Enter for the next ticket, Tab / arrows to switch.
 ## Toolbox: each tool is its own tab beside the Ticket tab (like a separate admin app). T switches
-## between the ticket and the tool it needs (Accounts or Remote Control). Tickets fixed in a tool are
+## between the ticket and the tool it needs (Accounts, Remote Control or Mail Console). Tickets fixed in a tool are
 ## closed on the Ticket tab with "Done" / "Hold".
 
 signal shift_ended(stats: Dictionary)
@@ -13,6 +13,7 @@ const UI := preload("res://scripts/ui.gd")
 const Terminal := preload("res://scripts/terminal.gd")
 const Accounts := preload("res://scripts/accounts.gd")
 const Remote := preload("res://scripts/remote.gd")
+const Mail := preload("res://scripts/mail.gd")
 
 const SHIFT_SECONDS := 600.0           # 8:00am to 5:00pm in ten real minutes
 const START_HOUR := 8.0
@@ -30,6 +31,7 @@ const MAX_QUEUE := 8
 const TOOL_ABOUT := {
 	"accounts": "Accounts: the client's users, groups, licences and sign-in settings. Nothing on this ticket needs a change here.",
 	"remote": "Remote Control: connect to one of the client's PCs and work on it. Nothing on this ticket needs it.",
+	"mail": "Mail Console: the client's message trace, quarantine and block list. Nothing on this ticket needs it.",
 }
 ## Commands offered as tap-to-run buttons under the prompt on touchscreens.
 const TERM_CHIPS := ["ipconfig", "ping 192.168.1.1", "ping 1.1.1.1", "nslookup google.com", "tracert 1.1.1.1",
@@ -95,12 +97,13 @@ var _view_queue := false       # compact only: showing the queue screen rather t
 var _back: Button              # compact only: "< Queue (n)" above the ticket
 var _next_btn: Button          # under the result: next ticket / next step
 var _action_boxes: Array = []  # admin-console steps: one CheckBox per action, in current.actions order
-var _tabs: HBoxContainer       # Toolbox tabs: Ticket, Accounts (later: Remote Control, Network Map...)
+var _tabs: HFlowContainer      # Toolbox tabs: Ticket, Accounts, Remote Control, Mail Console (wrap on phones)
 var _tab_btns := {}            # tab name -> Button
 var _tab := "ticket"           # the tab on show; each ticket remembers its own in t.tab
 var _tool_scroll: ScrollContainer  # holds the tool tabs' content
 var _accounts: Node            # scripts/accounts.gd, the Accounts tab
 var _remote: Node              # scripts/remote.gd, the Remote Control tab
+var _mail: Node                # scripts/mail.gd, the Mail Console tab
 var _tool_empty: Label         # a tool tab on a ticket that doesn't need it
 
 
@@ -188,10 +191,16 @@ func answer(i: int) -> void:
 	var opts: Array = current.options
 	if i < 0 or i >= opts.size():
 		return
-	if current.has("acct") or current.has("rc"):  # Toolbox tickets: "Done" or "Hold", judged on what was done in the tool
+	if _uses_tool(current):  # Toolbox tickets: "Done" or "Hold", judged on what was done in the tool
 		show_tab("ticket")  # the result shows on the ticket
 		var held: bool = i == opts.size() - 1
-		var problems: Array = Accounts.check(current.acct, held) if current.has("acct") else Remote.check(current.rc, held)
+		var problems: Array
+		if current.has("acct"):
+			problems = Accounts.check(current.acct, held)
+		elif current.has("rc"):
+			problems = Remote.check(current.rc, held)
+		else:
+			problems = Mail.check(current.mail, held)
 		if not problems.is_empty():
 			current.explain = "%s.\n%s" % [".\n".join(problems), current.explain]
 		current.acct_ok = problems.is_empty()
@@ -206,7 +215,12 @@ func toggle_toolbox() -> void:
 
 
 func _tool_for(t: Dictionary) -> String:
-	return "remote" if t.has("rc") else "accounts"
+	return "remote" if t.has("rc") else ("mail" if t.has("mail") else "accounts")
+
+
+## Is this ticket worked in a Toolbox tool and closed with Done / Hold?
+func _uses_tool(t: Dictionary) -> bool:
+	return t.has("acct") or t.has("rc") or t.has("mail")
 
 
 ## Switch the work area to a tab: the ticket itself, or one of the Toolbox tools.
@@ -224,12 +238,13 @@ func show_tab(name: String) -> void:
 		var on: bool = k == name
 		b.add_theme_stylebox_override("normal", UI.box(UI.ROW_SEL if on else UI.ROW, 6, 8, UI.ACCENT if on else Color(0, 0, 0, 0)))
 		b.add_theme_color_override("font_color", UI.TEXT if on else UI.MUTED)
-	var tool: String = "" if current.is_empty() or not (current.has("acct") or current.has("rc")) else _tool_for(current)
+	var tool: String = "" if current.is_empty() or not _uses_tool(current) else _tool_for(current)
 	_tab_btns.ticket.text = "Ticket #%d" % current.id if not current.is_empty() else "Ticket"
-	for k in [["accounts", "Accounts"], ["remote", "Remote Control"]]:
+	for k in [["accounts", "Accounts"], ["remote", "Remote Control"], ["mail", "Mail Console"]]:
 		_tab_btns[k[0]].text = ("%s  ●" % k[1] if tool == k[0] and name != k[0] else k[1]) + ("  (T)" if tool == k[0] and not _touch else "")
 	_accounts.visible = name == "accounts" and tool == "accounts"
 	_remote.visible = name == "remote" and tool == "remote"
+	_mail.visible = name == "mail" and tool == "mail"
 	_tool_empty.visible = name != "ticket" and tool != name
 	_tool_empty.text = TOOL_ABOUT.get(name, "")
 	if _accounts.visible:
@@ -238,6 +253,9 @@ func show_tab(name: String) -> void:
 	elif _remote.visible:
 		_remote.touch = _touch
 		_remote.open(current.rc, current.client, not _answered)
+	elif _mail.visible:
+		_mail.touch = _touch
+		_mail.open(current.mail, current.client, not _answered)
 
 
 ## Admin console steps: apply the ticked actions. Right when every must-do action is ticked and
@@ -615,9 +633,10 @@ func _mark_options(chosen: int) -> void:
 				cb.add_theme_stylebox_override("disabled", UI.box(UI.BAD.darkened(0.55), 6, 8))
 		return
 	var btns := _opts.get_children()
-	if current.has("acct") or current.has("rc"):  # Done / Hold: only right if the tool was left right too
+	if _uses_tool(current):  # Done / Hold: only right if the tool was left right too
 		_accounts.set_enabled(false)
 		_remote.set_enabled(false)
+		_mail.set_enabled(false)
 		if chosen >= 0:
 			for b in btns:
 				b.disabled = true
@@ -801,10 +820,11 @@ func _build() -> void:
 	_back.visible = false
 	dcol.add_child(_back)
 	# Toolbox tabs: the ticket, and each tool in its own tab, like separate admin apps
-	_tabs = HBoxContainer.new()
-	_tabs.add_theme_constant_override("separation", 6)
+	_tabs = HFlowContainer.new()
+	_tabs.add_theme_constant_override("h_separation", 6)
+	_tabs.add_theme_constant_override("v_separation", 6)
 	dcol.add_child(_tabs)
-	for k in ["ticket", "accounts", "remote"]:
+	for k in ["ticket", "accounts", "remote", "mail"]:
 		var tb := Button.new()
 		tb.focus_mode = Control.FOCUS_NONE
 		tb.custom_minimum_size = Vector2(0, 44 if DisplayServer.is_touchscreen_available() else 34)
@@ -826,6 +846,10 @@ func _build() -> void:
 	_remote.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_remote.changed.connect(func() -> void: _sfx("type"))
 	tcol.add_child(_remote)
+	_mail = Mail.new()
+	_mail.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_mail.changed.connect(func() -> void: _sfx("type"))
+	tcol.add_child(_mail)
 	_tool_empty = UI.wrap(UI.label(tcol, "", 15, UI.MUTED))
 	var dscroll := ScrollContainer.new()
 	dscroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED

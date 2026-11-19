@@ -1,9 +1,20 @@
 {
- "day": 11,
+ "day": 12,
  "lines": [
-  {"text": "New starter on Monday? License them yourself."},
-  {"text": "They need desktop apps and a managed laptop, so that's Business Premium.", "at": 3.4},
-  {"text": "None spare? A leaver's mailbox is already shared, so free their licence.", "at": 9.0},
-  {"text": "Then give it to the starter, not their namesake.", "at": 15.0}
+  {
+   "text": "Someone reported a suspicious email. Deal with it yourself."
+  },
+  {
+   "text": "Find it in the Mail Console. Every check passes, but the link is a fake sign-in page.",
+   "at": 3.4
+  },
+  {
+   "text": "A real supplier got hacked. Delete every copy and block the link, not their domain.",
+   "at": 9.5
+  },
+  {
+   "text": "Then close the ticket as done.",
+   "at": 16.0
+  }
  ]
 }

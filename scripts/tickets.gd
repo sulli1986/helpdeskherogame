@@ -52,7 +52,7 @@ func make(kind := "") -> Dictionary:
 	t["kind"] = kind
 	t["client"] = ctx.client
 	t["user"] = ctx.user
-	if not t.has("acct") and not t.has("rc"):  # Toolbox tickets keep "Done" / "Hold" in that order
+	if not t.has("acct") and not t.has("rc") and not t.has("mail"):  # Toolbox tickets keep "Done" / "Hold" in that order
 		_shuffle_options(t)
 	for st in t.get("steps", []):
 		if st.has("options"):  # console steps ("actions") keep their admin-console order
@@ -61,50 +61,143 @@ func make(kind := "") -> Dictionary:
 
 
 # ---------------------------------------------------------------- phishing
+## Done in Toolbox > Mail Console: find the reported email in today's message trace, read its headers,
+## then delete a phish from every mailbox and block what fits (the scammer's address, the attacker's
+## own domain, or the link; never a whole shared or genuine domain), release a legit email that was
+## quarantined, or change nothing and hold when only a phone call to the sender can settle it.
+const SUPPLIERS := [["Northgate Supplies", "northgatesupplies.com"], ["Copperleaf Catering", "copperleafcatering.com"],
+	["Harbourline Cleaning", "harbourlinecleaning.com"]]
+
+
 func _make_phish(c: Dictionary) -> Dictionary:
-	var legit := rng.randf() < 0.4
 	var d: String = c.domain
-	var info := ""
+	var roll := rng.randf()
+	var kind := "phish" if roll < 0.55 else ("legit" if roll < 0.85 else "hold")
+	var sup: Array = _pick(SUPPLIERS)
+	var others: Array = []  # colleagues who got the same email
+	while others.size() < 3:
+		var n := "%s %s" % [_pick(FIRST), _pick(LAST)]
+		if n != c.user and not n in others:
+			others.append(n)
+	var no := {"addr": [0, ""], "domain": [0, ""], "url": [0, ""]}
+	var m := {"id": 1, "reply_to": "(none)", "links": "(none)", "url_host": "", "attach": "(none)", "note": "",
+		"recips": [{"name": c.user, "folder": "Inbox"}]}
+	var goal := {"id": 1, "kind": kind, "release": false, "hold_why": "", "blocks": no}
 	var explain := ""
-	if legit:
-		var v := rng.randi() % 2
-		if v == 0:
-			info = "From:      Xero <messaging-service@post.xero.com>\nReply-To:  (none)\nSubject:   Invoice INV-%d from Office Supplies Co\nAuth:      SPF=pass  DKIM=pass (xero.com)  DMARC=pass\nLinks:     in.xero.com/…\nNote:      Supplier is in the vendor list; amount matches the PO" % rng.randi_range(4000, 9999)
-			explain = "Legit. SPF, DKIM and DMARC all pass for xero.com, the link goes to xero.com, and it matches a real PO."
+	var v := rng.randi() % 4
+	if kind == "legit":
+		var legit_bad := "Blocked a legitimate sender. Nothing about this email needed blocking"
+		goal.blocks = {"addr": [-1, legit_bad], "domain": [-1, legit_bad], "url": [-1, legit_bad]}
+		if v % 2 == 0:
+			m.merge({"from_name": sup[0], "from_addr": "messaging-service@post.xero.com", "reply_to": "accounts@%s" % sup[1],
+				"subject": "Invoice INV-%d from %s" % [rng.randi_range(4000, 9999), sup[0]],
+				"auth": "SPF=pass  DKIM=pass (post.xero.com)  DMARC=pass", "links": "in.xero.com/…", "url_host": "in.xero.com",
+				"note": "Quarantined (verdict: phish). %s is in the vendor list; the amount matches PO %d" % [sup[0], rng.randi_range(1000, 4999)]}, true)
+			m.recips[0].folder = "Quarantine"
+			goal.release = true
+			explain = "Legit, and the filter got it wrong. SPF, DKIM and DMARC all pass for post.xero.com (Xero sends invoices for its customers), the link goes to xero.com, and it matches a real PO. Release it, block nothing, and you can report the false positive to Microsoft."
 		else:
-			info = "From:      Microsoft 365 <no-reply@microsoft.com>\nReply-To:  (none)\nSubject:   Your MFA method was updated\nAuth:      SPF=pass  DKIM=pass (microsoft.com)  DMARC=pass\nLinks:     account.microsoft.com/…\nNote:      %s changed phones yesterday (ticket in PSA)" % c.first
-			explain = "Legit. Auth passes for microsoft.com, the link is Microsoft's own, and it lines up with yesterday's phone change."
+			var grp: String = "Finance" if v == 1 else "Projects"
+			m.merge({"from_name": "Microsoft on behalf of %s" % c.client, "from_addr": "MSSecurity-noreply@microsoft.com",
+				"subject": "Action required: review access to the %s group" % grp, "auth": "SPF=pass  DKIM=pass (microsoft.com)  DMARC=pass",
+				"links": "myaccess.microsoft.com/…", "url_host": "myaccess.microsoft.com",
+				"note": "Your team started this quarter's Entra access review of the %s group this morning (ticket in PSA); %s is a reviewer" % [grp, c.first]}, true)
+			explain = "Legit. Entra access reviews email reviewers from MSSecurity-noreply@microsoft.com \"on behalf of\" the organisation, auth passes for microsoft.com, the link is Microsoft's own My Access portal, and it matches the review your team started this morning. Nothing to delete or block: tell %s it's safe to do the review." % c.first
+	elif kind == "hold":
+		m.merge({"from_name": "%s Accounts" % sup[0], "from_addr": "accounts@%s" % sup[1], "reply_to": "accounts@%s" % sup[1],
+			"subject": "Change of bank details for future payments", "auth": "SPF=pass  DKIM=pass (%s)  DMARC=pass" % sup[1],
+			"attach": "Bank_details_letter.pdf (scanned clean)", "note": "%s is in the vendor list; a payment run to them is due this week" % sup[0]}, true)
+		goal.hold_why = "a change of bank details must be confirmed by phoning %s on a number you already have (not one in the email) before anything is paid. Passing SPF, DKIM and DMARC only proves it came from their mail system, and supplier mailboxes get hacked" % sup[0]
+		explain = "Can't be settled from the headers. It really came from %s's mail system, but that's exactly what a hacked supplier mailbox looks like. Don't delete, release or block anything: hold it, and have accounts phone %s on the number already on file before changing any payment details." % [sup[0], sup[0]]
 	else:
-		var v := rng.randi() % 4
+		var copies: int = rng.randi_range(1, 3)
+		for i in copies:
+			m.recips.append({"name": others[i], "folder": "Inbox"})
+		var r := rng.randf()
+		if r < 0.25:
+			m.recips[-1].folder = "Junk"
+		elif r < 0.5:
+			m.recips[-1].folder = "Quarantine"  # the filter caught one copy: leave it there
 		match v:
 			0:
-				info = "From:      Microsoft 365 <alert@rnicrosoft-secure.com>\nReply-To:  (none)\nSubject:   Password expires today – keep current password\nAuth:      SPF=pass (rnicrosoft-secure.com)  DMARC=none\nLinks:     rnicrosoft-secure.com/owa/login"
-				explain = "Phish. \"rnicrosoft\" is r-n, not m. SPF passing only proves the lookalike domain sent it."
+				m.merge({"from_name": "Microsoft 365", "from_addr": "alert@rnicrosoft-secure.com",
+					"subject": "Password expires today: keep current password", "auth": "SPF=pass (rnicrosoft-secure.com)  DKIM=none  DMARC=none",
+					"links": "rnicrosoft-secure.com/owa/login", "url_host": "rnicrosoft-secure.com"}, true)
+				goal.blocks = {"addr": [0, ""], "url": [0, ""],
+					"domain": [1, "rnicrosoft-secure.com wasn't blocked: it's the attacker's own lookalike domain, so block all of it, not just one address"]}
+				explain = "Phish. \"rnicrosoft\" is r-n, not m. SPF passing only proves the lookalike domain sent it. Delete every copy and block the whole domain: the attacker owns it."
 			1:
-				var boss_last: String = _pick(LAST)
-				info = "From:      %s %s (CEO) <ceo.%s@gmail.com>\nReply-To:  ceo.%s@gmail.com\nSubject:   Urgent – need gift cards for clients today\nAuth:      SPF=pass (gmail.com)  [EXTERNAL]\nLinks:     (none)" % [_pick(FIRST), boss_last, boss_last.to_lower(), boss_last.to_lower()]
-				explain = "Phish (CEO fraud). Display name is the boss, the address is Gmail, and it's urgent gift cards. Classic BEC."
+				var boss_last: String = _pick(LAST.filter(func(l: String) -> bool: return l != c.last))
+				var addr := "ceo.%s@gmail.com" % boss_last.to_lower()
+				m.merge({"from_name": "%s %s (CEO)" % [_pick(FIRST), boss_last], "from_addr": addr, "reply_to": addr,
+					"subject": "Urgent: need gift cards for clients today", "auth": "SPF=pass  DKIM=pass (gmail.com)  DMARC=pass  [EXTERNAL]"}, true)
+				goal.blocks = {"url": [0, ""],
+					"addr": [1, "%s wasn't blocked: block the scammer's address" % addr],
+					"domain": [-1, "Blocked all of gmail.com: that stops every customer and supplier who uses Gmail. Block the scammer's address instead"]}
+				explain = "Phish (CEO fraud). The display name is the boss, but the address is a Gmail account, and it's urgent gift cards. Classic business email compromise. Delete every copy and block that one address, never gmail.com."
 			2:
 				var typo := d.replace(".com", "-accounts.co")  # lookalike of their own domain
-				info = "From:      Accounts <accounts@%s>\nReply-To:  payments@%s\nSubject:   Updated bank details for next payment run\nAuth:      SPF=softfail  DMARC=fail\nLinks:     (attachment: New_Bank_Details.pdf.html)" % [typo, typo]
-				explain = "Phish. Lookalike of their own domain, DMARC fails, bank-detail change by email, and a .pdf.html attachment."
+				m.merge({"from_name": "Accounts", "from_addr": "accounts@%s" % typo, "reply_to": "payments@%s" % typo,
+					"subject": "Updated bank details for next payment run", "auth": "SPF=softfail  DKIM=none  DMARC=none",
+					"attach": "New_Bank_Details.pdf.html"}, true)
+				goal.blocks = {"addr": [0, ""], "url": [0, ""],
+					"domain": [1, "%s wasn't blocked: it's a lookalike of the client's own domain that the attacker owns, so block all of it" % typo]}
+				explain = "Phish. A lookalike of their own domain, no DKIM or DMARC, SPF soft-fails, a bank-detail change by email, and a .pdf.html attachment (a web page posing as a PDF). Delete every copy and block the lookalike domain."
 			_:
-				info = "From:      DocuSign <dse@docusign.net>\nReply-To:  (none)\nSubject:   Please review and sign: Lease_Renewal.pdf\nAuth:      SPF=fail  DKIM=none  DMARC=fail\nLinks:     docusign-review.web.app/…"
-				explain = "Phish. The From says docusign.net, but SPF and DMARC fail and the link goes to a free web.app host."
+				var first: String = _pick(FIRST)
+				var last: String = _pick(LAST)
+				var host := "%s-docs.web.app" % sup[1].get_slice(".", 0)
+				m.merge({"from_name": "%s %s" % [first, last], "from_addr": "%s.%s@%s" % [first.to_lower(), last.to_lower(), sup[1]],
+					"subject": "Shared file: statement of account", "auth": "SPF=pass  DKIM=pass (%s)  DMARC=pass" % sup[1],
+					"links": "%s/statement (opens a Microsoft 365 sign-in page)" % host, "url_host": host,
+					"note": "%s is in the vendor list. They normally send statements as PDF attachments" % sup[0]}, true)
+				goal.blocks = {"addr": [0, ""],
+					"url": [1, "%s wasn't blocked: the fake sign-in page is the attack, so block the link" % host],
+					"domain": [-1, "Blocked %s: they're a real supplier whose mailbox was hacked, so their genuine invoices would be blocked too. Block the link and tell them" % sup[1]]}
+				explain = "Phish from a real supplier's hacked mailbox. SPF, DKIM and DMARC pass because it really came from their account. The giveaway is the link: a free web.app host showing a Microsoft 365 sign-in page. Delete every copy, block the link (not their domain), and phone %s on a known number so they can secure the mailbox." % sup[0]
+	# Today's other mail to the reporter: find the one they mean
+	var pool: Array = [
+		{"from_name": others[0], "from_addr": "%s@%s" % [(others[0].substr(0, 1) + others[0].get_slice(" ", 1)).to_lower(), d],
+			"subject": "Team lunch Friday?", "auth": "Internal (sent from your own organisation)"},
+		{"from_name": "Brightline Office", "from_addr": "orders@brightlineoffice.com", "subject": "Your order #%d has shipped" % rng.randi_range(20000, 99999),
+			"auth": "SPF=pass  DKIM=pass (brightlineoffice.com)  DMARC=pass", "links": "brightlineoffice.com/track/…", "url_host": "brightlineoffice.com"},
+		{"from_name": "%s Payroll" % c.client, "from_addr": "payroll@%s" % d, "subject": "Timesheets due by Friday",
+			"auth": "Internal (sent from your own organisation)"},
+	]
+	_shuffle(pool)
+	var msgs: Array = [m]
+	for i in rng.randi_range(2, 3):
+		var x: Dictionary = pool[i]
+		x.merge({"id": i + 2, "reply_to": "(none)", "links": "(none)", "url_host": "", "attach": "(none)", "note": "",
+			"recips": [{"name": c.user, "folder": "Inbox"}]})
+		msgs.append(x)
+	var mins: Array = []
+	while mins.size() < msgs.size():
+		var t := rng.randi_range(7 * 60 + 30, 11 * 60 + 50)
+		if not t in mins:
+			mins.append(t)
+	mins.sort()
+	mins.reverse()  # newest first, like a message trace
+	_shuffle(msgs)
+	for i in msgs.size():
+		@warning_ignore("integer_division")
+		msgs[i].time = "%d:%02d" % [mins[i] / 60, mins[i] % 60]
+	var held: bool = m.recips[0].folder == "Quarantine"
 	return {
 		"priority": 2,
-		"subject": "Is this email legit?",
-		"body": "%s forwarded an email: \"Not sure about this one, can you check before I click anything?\"" % c.first,
-		"info_title": "Message headers",
-		"info": info,
-		"question": "Your call?",
+		"subject": "Can you release this email?" if held else "Is this email legit?",
+		"body": ("%s got a quarantine notice for \"%s\" from %s: \"We're expecting this one, can you release it?\"" if held
+			else "%s reported \"%s\" from %s: \"Not sure about this one, can you check it before anyone clicks anything?\"") % [c.first, m.subject, m.from_name],
+		"info_title": "Report",
+		"info": "Reported by:  %s\nSubject:      %s\nReceived:     today %s\nLook it up:   Mail Console tab (message trace)" % [c.user, m.subject, m.time],
+		"mail": {"reporter": c.user, "msgs": msgs, "done": [], "goal": goal},
+		"question": "On the Mail Console tab (T): deal with the email, or hold",
 		"options": [
-			"Phish: quarantine, block sender, purge from all mailboxes",
-			"Legitimate: release it and let them know it's safe",
-			"Reply to the sender and ask if they really sent it",
+			"Done: dealt with in the Mail Console. Tell %s the outcome" % c.first,
+			"Hold: change nothing. Get it confirmed with the sender on a phone number you already have",
 		],
-		"answer": 1 if legit else 0,
-		"explain": explain + ("" if legit else " Never reply to a suspected phish; verify by a known phone number."),
+		"answer": 1 if kind == "hold" else 0,
+		"explain": explain + (" Never reply to a suspected phish; verify by a known phone number." if kind == "phish" else ""),
 	}
 
 

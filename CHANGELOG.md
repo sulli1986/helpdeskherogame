@@ -1,5 +1,10 @@
 # Changelog
 
+## Day 12 — 2026-11-20
+- Deal with phishing yourself: reported emails are now worked in the Mail Console, a new Toolbox app in its own tab. Find the email they mean in today's message trace and read its headers
+- A phish? Delete it from every mailbox it reached, then block the right thing: the scammer's address, the attacker's own lookalike domain, or the fake sign-in link. Never block all of Gmail, or a real supplier whose mailbox was hacked
+- Legit but quarantined? Release it. A bank-detail change from a real supplier? Change nothing and hold until someone phones them on a number you already have
+
 ## Day 11 — 2026-11-19
 - License the new starter yourself: "New starter Monday" tickets are now done in Accounts. Find the starter (not their namesake) and assign their Microsoft 365 licence
 - Pick the cheapest licence that covers their needs: Basic for phone and browser only, Standard for desktop Office apps, Premium when the laptop must be managed with Intune and Defender

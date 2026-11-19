@@ -94,6 +94,10 @@ func _check(kind: String, t: Dictionary) -> void:
 		_check_rc(kind, t)
 		for pc in t.rc.pcs:
 			text += " " + " ".join([pc.name, pc.user, pc.cpu]).to_lower()
+	if t.has("mail"):
+		_check_mail(kind, t)
+		for x in t.mail.msgs:
+			text += " " + " ".join([x.from_name, x.from_addr, x.reply_to, x.subject, x.auth, x.links, x.attach, x.note]).to_lower()
 	if t.has("term"):
 		var Terminal = load("res://scripts/terminal.gd")
 		if not t.has("prompt"):
@@ -297,6 +301,95 @@ func _check_rc(kind: String, t: Dictionary) -> void:
 		ok.installs = [{"pc": goal.pc, "pkg": right}]
 		if not R.check(ok, false).is_empty() or R.check(ok, true).is_empty():
 			_fail(kind, "rc: right install doesn't pass: %s" % str(R.check(ok, false)))
+
+
+## Toolbox > Mail Console tickets: Done / Hold; doing exactly what the goal needs must pass, and every
+## action the goal forbids, skipping a must-do, or acting on another email must each be caught.
+func _check_mail(kind: String, t: Dictionary) -> void:
+	var M = load("res://scripts/mail.gd")
+	var m: Dictionary = t.mail
+	var goal: Dictionary = m.goal
+	var hold: bool = goal.kind == "hold"
+	if t.options.size() != 2 or t.answer != (1 if hold else 0):
+		_fail(kind, "mail options must be Done / Hold, answer matching the goal")
+	var target: Dictionary = M._msg_in(m.msgs, goal.id)
+	if target.is_empty() or target.recips[0].name != t.user or not target.subject in t.body:
+		_fail(kind, "mail: reported message missing or not the caller's")
+		return
+	var subjects := {}
+	for x in m.msgs:
+		if subjects.has(x.subject):
+			_fail(kind, "mail: two messages share a subject")
+		subjects[x.subject] = true
+	var quar: bool = target.recips.any(func(r: Dictionary) -> bool: return r.folder == "Quarantine")
+	if goal.release and (not quar or goal.kind != "legit"):
+		_fail(kind, "mail: release goal without a quarantined legit copy")
+	var musts: Array = ["purge"] if goal.kind == "phish" else []
+	if goal.release:
+		musts.append("release")
+	var oks: Array = []
+	var bads: Array = []
+	for k in goal.blocks:
+		var need: int = goal.blocks[k][0]
+		if need == 1:
+			musts.append(k)
+		elif need == -1:
+			bads.append(k)
+		elif k != "url" or target.url_host != "":
+			oks.append(k)
+		if need != 0 and str(goal.blocks[k][1]).strip_edges() == "":
+			_fail(kind, "mail: block rule %s has no reason" % k)
+		if need == 1 and k == "url" and target.url_host == "":
+			_fail(kind, "mail: must block a link that isn't there")
+	if goal.kind == "legit":
+		bads.append("purge")
+	if goal.kind == "phish" and quar:
+		bads.append("release")
+	if hold:
+		musts.clear()
+		oks.clear()
+		bads = ["purge", "addr", "domain"] + (["url"] if target.url_host != "" else []) + (["release"] if quar else [])
+	var run := func(acts: Array, held: bool, on_id := -1) -> Array:
+		var c: Dictionary = m.duplicate(true)
+		var node = M.new()
+		node.mail = c
+		node.selected = goal.id if on_id < 0 else on_id
+		for a in acts:
+			node.act(a)
+		node.free()
+		return M.check(c, held)
+	# Untouched: right only when nothing needs doing
+	if run.call([], hold).is_empty() != musts.is_empty():
+		_fail(kind, "mail: untouched console judged wrongly")
+	if not hold and run.call([], true).is_empty():
+		_fail(kind, "mail: holding a clear-cut email wasn't caught")
+	if hold and run.call([], false).is_empty():
+		_fail(kind, "mail: marking a hold done wasn't caught")
+	var right: Array = run.call(musts, hold)
+	if not right.is_empty():
+		_fail(kind, "mail: doing it right doesn't pass: %s" % str(right))
+	if not run.call(musts + oks, hold).is_empty():
+		_fail(kind, "mail: optional blocks were judged wrong")
+	for k in musts:
+		var less: Array = musts.filter(func(x: String) -> bool: return x != k)
+		if run.call(less, hold).is_empty():
+			_fail(kind, "mail: skipping %s wasn't caught" % k)
+	for k in bads:
+		if run.call(musts + [k], hold).is_empty():
+			_fail(kind, "mail: doing %s wasn't caught" % k)
+	for x in m.msgs:  # acting on another email is always wrong
+		if x.id != goal.id:
+			var c: Dictionary = m.duplicate(true)
+			var node = M.new()
+			node.mail = c
+			node.selected = goal.id
+			for a in musts:
+				node.act(a)
+			node.selected = x.id
+			node.act("addr")
+			node.free()
+			if M.check(c, hold).is_empty():
+				_fail(kind, "mail: acting on another email wasn't caught")
 
 
 func _check_options(kind: String, opts: Array, answer: int) -> void:

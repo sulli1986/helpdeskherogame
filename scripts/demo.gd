@@ -9,7 +9,7 @@ const END_AT := 27.0
 const READ_TIME := 2.4      # seconds "reading" a ticket before answering
 const RESULT_TIME := 1.8    # seconds showing the explanation
 const WRONG_AT := 17.0      # one deliberate wrong call after the feature (shows the penalty)
-const SEED := 6             # Day 11: needs Premium, none spare, a leaver (not the namesake) holds one
+const SEED := 15            # Day 12: a phish from a real supplier's hacked mailbox, sent to three people
 
 var main: Node
 var desk: Node
@@ -53,8 +53,8 @@ func _start_shift() -> void:
 	main.summary.visible = false
 	desk.spawn_scale = 4.0
 	desk.clock_scale = 8.0   # the clock visibly moves, but the shift doesn't end in the clip
-	desk.first_kind = "licence"  # Day 11: open on a new-starter licence ticket, done in Toolbox > Accounts
-	desk.start(SEED)  # Day 11: needs Premium, none spare, a leaver holds one
+	desk.first_kind = "phish"  # Day 12: open on a reported email, dealt with in Toolbox > Mail Console
+	desk.start(SEED)
 	_auto = true
 	_step_t = 2.8  # the hook line plays over the first ticket
 
@@ -107,6 +107,10 @@ func _process(delta: float) -> void:
 	elif desk.current.has("rc") and not desk.current.get("demo_planned", false):
 		desk.current.demo_planned = true
 		_plan_remote(desk.current)
+		_step_t = 0.2
+	elif desk.current.has("mail") and not desk.current.get("demo_planned", false):
+		desk.current.demo_planned = true
+		_plan_mail(desk.current)
 		_step_t = 0.2
 	elif desk.current.has("actions"):
 		# Day 8: tick the actions the account needs one by one, then Apply.
@@ -180,6 +184,27 @@ func _plan_remote(t: Dictionary) -> void:
 		_plan.append([rem.open_app.bind("devmgr"), 0.1])
 		_plan.append([_scroll_to_end, 1.6])
 	_plan.append([desk.answer.bind(1 if goal.hold else 0), RESULT_TIME + 1.0])
+
+
+## Day 12: Mail Console: find the reported email in the message trace, read its headers, then
+## delete every copy and block what fits (or release / hold), and close it as Done.
+func _plan_mail(t: Dictionary) -> void:
+	var mc: Node = desk._mail
+	var goal: Dictionary = t.mail.goal
+	_plan = [
+		[desk.show_tab.bind("mail"), 1.8],                # the message trace: which one did they mean?
+		[mc.select.bind(goal.id), 0.1],
+		[func() -> void: _scroll_to(mc.headers), 4.4],    # auth passes... but the link is a fake sign-in page
+	]
+	if goal.kind == "phish":
+		_plan.append([mc.act.bind("purge"), 1.6])
+	if goal.release:
+		_plan.append([mc.act.bind("release"), 1.6])
+	for k in ["addr", "domain", "url"]:
+		if goal.blocks[k][0] == 1:
+			_plan.append([mc.act.bind(k), 1.0])
+	_plan.append([_scroll_to_end, 1.4])
+	_plan.append([desk.answer.bind(1 if goal.kind == "hold" else 0), RESULT_TIME + 1.0])
 
 
 func _scroll_to_end() -> void:
