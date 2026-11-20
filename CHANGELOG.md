@@ -1,5 +1,10 @@
 # Changelog
 
+## Day 13 — 2026-11-21
+- Trace the dead printer yourself: "Printer not printing" tickets are now worked on the Network Map, a new Toolbox tab with the client's firewall, switch, print server and printers
+- Ping it from the print server, open its web page, check the switch ports and the firewall's DHCP leases, or ask the caller to read its screen. Then fix it: cancel the stuck job, resume the queue, re-point the port at the printer's new address and reserve it, or get the cable plugged back in
+- Out of toner with no spare, or a hardware fault? Order it or log the vendor call, then put the ticket on hold. Clearing the spool folder throws away everyone's jobs, so it counts against you
+
 ## Day 12 — 2026-11-20
 - Deal with phishing yourself: reported emails are now worked in the Mail Console, a new Toolbox app in its own tab. Find the email they mean in today's message trace and read its headers
 - A phish? Delete it from every mailbox it reached, then block the right thing: the scammer's address, the attacker's own lookalike domain, or the fake sign-in link. Never block all of Gmail, or a real supplier whose mailbox was hacked

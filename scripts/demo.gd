@@ -9,7 +9,7 @@ const END_AT := 27.0
 const READ_TIME := 2.4      # seconds "reading" a ticket before answering
 const RESULT_TIME := 1.8    # seconds showing the explanation
 const WRONG_AT := 17.0      # one deliberate wrong call after the feature (shows the penalty)
-const SEED := 15            # Day 12: a phish from a real supplier's hacked mailbox, sent to three people
+const SEED := 41            # Day 13: a printer that got a new DHCP address after DHCP moved to the firewall
 
 var main: Node
 var desk: Node
@@ -53,7 +53,7 @@ func _start_shift() -> void:
 	main.summary.visible = false
 	desk.spawn_scale = 4.0
 	desk.clock_scale = 8.0   # the clock visibly moves, but the shift doesn't end in the clip
-	desk.first_kind = "phish"  # Day 12: open on a reported email, dealt with in Toolbox > Mail Console
+	desk.first_kind = "printer"  # Day 13: open on a printer ticket, worked in Toolbox > Network Map
 	desk.start(SEED)
 	_auto = true
 	_step_t = 2.8  # the hook line plays over the first ticket
@@ -111,6 +111,10 @@ func _process(delta: float) -> void:
 	elif desk.current.has("mail") and not desk.current.get("demo_planned", false):
 		desk.current.demo_planned = true
 		_plan_mail(desk.current)
+		_step_t = 0.2
+	elif desk.current.has("net") and not desk.current.get("demo_planned", false):
+		desk.current.demo_planned = true
+		_plan_net(desk.current)
 		_step_t = 0.2
 	elif desk.current.has("actions"):
 		# Day 8: tick the actions the account needs one by one, then Apply.
@@ -205,6 +209,45 @@ func _plan_mail(t: Dictionary) -> void:
 			_plan.append([mc.act.bind(k), 1.0])
 	_plan.append([_scroll_to_end, 1.4])
 	_plan.append([desk.answer.bind(1 if goal.kind == "hold" else 0), RESULT_TIME + 1.0])
+
+
+## Day 13: Network Map: the print server can't reach the printer, FW01's leases show it got a new
+## address, so point the queue's port at it, check it prints, reserve the address and close it as Done.
+func _plan_net(t: Dictionary) -> void:
+	var nm: Node = desk._net
+	var goal: Dictionary = t.net.goal
+	_plan = [
+		[desk.show_tab.bind("net"), 1.6],                    # the map: PRINT01 has a problem
+		[nm.select.bind("PRINT01"), 0.1],
+		[func() -> void: _scroll_to(nm.focus), 1.0],
+		[nm.ping.bind(goal.mfp), 0.1],
+		[_scroll_to_end, 1.8],                               # Offline, ping times out
+	]
+	match goal.fault:
+		"ip":
+			_plan.append_array([
+				[nm.select.bind("FW01"), 0.1],
+				[func() -> void: _scroll_to(nm.focus), 2.6],  # leased today 07:xx: a new address
+				[nm.select.bind("PRINT01"), 0.1],
+				[func() -> void: _scroll_to(nm.focus), 0.6],
+				[func() -> void: nm._port_edit[goal.mfp].text = goal.new_ip, 0.9],
+				[nm.act.bind("port", goal.mfp, goal.new_ip), 0.1],
+				[func() -> void: _scroll_to(nm.focus), 1.0],
+				[nm.ping.bind(goal.mfp), 0.1],
+				[_scroll_to_end, 1.4],                       # Ready, replies
+				[nm.select.bind("FW01"), 0.1],
+				[func() -> void: _scroll_to(nm.focus), 0.8],
+				[nm.act.bind("reserve", goal.mfp), 1.4],
+			])
+		"job", "paused":
+			_plan.append([nm.act.bind("cancel" if goal.fault == "job" else "resume", goal.mfp), 1.6])
+		_:
+			_plan.append([nm.select.bind(goal.mfp), 0.1])
+			_plan.append([nm.read_panel.bind(goal.mfp), 1.8])
+			var fix: String = {"cable": "cable", "toner_spare": "spare", "toner_order": "order", "fuser": "service"}[goal.fault]
+			_plan.append([nm.act.bind(fix, goal.mfp), 0.1])
+			_plan.append([_scroll_to_end, 1.6])
+	_plan.append([desk.answer.bind(1 if goal.hold else 0), RESULT_TIME + 1.0])
 
 
 func _scroll_to_end() -> void:

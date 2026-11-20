@@ -98,6 +98,9 @@ func _check(kind: String, t: Dictionary) -> void:
 		_check_mail(kind, t)
 		for x in t.mail.msgs:
 			text += " " + " ".join([x.from_name, x.from_addr, x.reply_to, x.subject, x.auth, x.links, x.attach, x.note]).to_lower()
+	if t.has("net"):
+		_check_net(kind, t)
+		text += " " + " ".join(t.net.changes).to_lower()
 	if t.has("term"):
 		var Terminal = load("res://scripts/terminal.gd")
 		if not t.has("prompt"):
@@ -145,6 +148,62 @@ func _check_actions(kind: String, acts: Array) -> void:
 		trap += 1 if a.need == -1 else 0
 	if must == 0 or trap == 0:
 		_fail(kind, "console needs at least one must-do and one wrong action")
+
+
+## Toolbox > Network Map tickets: Done / Hold; doing what the fault needs must pass (and the other
+## close must not), the untouched network must fail both ways, and every harmful action must be caught.
+func _check_net(kind: String, t: Dictionary) -> void:
+	var N = load("res://scripts/netmap.gd")
+	var n: Dictionary = t.net
+	var goal: Dictionary = n.goal
+	if t.options.size() != 2 or t.answer != (1 if goal.hold else 0):
+		_fail(kind, "net options must be Done / Hold, answer matching goal.hold")
+	var tm: Dictionary = N.mfp_in(n, goal.mfp)
+	var other: Dictionary = N.mfp_in(n, goal.other)
+	if tm.is_empty() or other.is_empty() or not N.printing(other) or N.printing(tm):
+		_fail(kind, "net: the target must be broken and the other printer working")
+		return
+	if not goal.mfp in t.body:
+		_fail(kind, "net: body doesn't name the broken printer")
+	if N.check(n, false).is_empty() or N.check(n, true).is_empty():
+		_fail(kind, "net: untouched network judged right")
+	var fix: Array = {"job": [["cancel"]], "paused": [["resume"]], "ip": [["port", goal.new_ip], ["reserve"]],
+		"cable": [["cable"]], "toner_spare": [["spare"]], "toner_order": [["order"]], "fuser": [["service"]]}[goal.fault]
+	if goal.fault == "toner_spare" and not n.spare or goal.fault == "toner_order" and n.spare:
+		_fail(kind, "net: spare toner doesn't match the case")
+	var ok: Dictionary = n.duplicate(true)
+	for f in fix:
+		N.apply(ok, f[0], goal.mfp, f[1] if f.size() > 1 else null)
+	if not N.check(ok, goal.hold).is_empty() or N.check(ok, not goal.hold).is_empty():
+		_fail(kind, "net: the right fix doesn't pass (%s): %s" % [goal.fault, str(N.check(ok, goal.hold))])
+		return
+	if not goal.hold and not N.printing(N.mfp_in(ok, goal.mfp)):
+		_fail(kind, "net: not printing after the fix")
+	if goal.fault == "ip":  # the port alone isn't enough
+		var half: Dictionary = n.duplicate(true)
+		N.apply(half, "port", goal.mfp, goal.new_ip)
+		if N.check(half, false).is_empty():
+			_fail(kind, "net: missing DHCP reservation wasn't caught")
+	var bad: Array = [["spooler", "PRINT01"], ["port", goal.mfp, "192.168.10.%d" % (60 if goal.fault != "ip" else 51)],
+		["port", goal.other, "192.168.10.99"], ["order", goal.other], ["service", goal.other]]
+	if not goal.fault.begins_with("toner"):
+		bad.append(["order", goal.mfp])
+	if goal.fault != "fuser":
+		bad.append(["service", goal.mfp])
+	for b in bad:  # each harmful action on top of the right fix must fail
+		var w: Dictionary = n.duplicate(true)
+		for f in fix:
+			N.apply(w, f[0], goal.mfp, f[1] if f.size() > 1 else null)
+		N.apply(w, b[0], b[1], b[2] if b.size() > 2 else null)
+		if N.check(w, goal.hold).is_empty():
+			_fail(kind, "net: harmful %s wasn't caught (%s)" % [str(b), goal.fault])
+	for a in ["bounce", "cable", "spare"]:  # harmless checks on the other printer change nothing
+		var h: Dictionary = n.duplicate(true)
+		for f in fix:
+			N.apply(h, f[0], goal.mfp, f[1] if f.size() > 1 else null)
+		N.apply(h, a, goal.other)
+		if not N.check(h, goal.hold).is_empty():
+			_fail(kind, "net: harmless %s was judged wrong" % a)
 
 
 ## Toolbox > Accounts tickets: options are Done / Hold; the goal must be reachable in the tool and

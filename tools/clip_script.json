@@ -1,20 +1,20 @@
 {
- "day": 12,
+ "day": 13,
  "lines": [
   {
-   "text": "Someone reported a suspicious email. Deal with it yourself."
+   "text": "The printer's down and invoices are due. Fix it on the network map."
   },
   {
-   "text": "Find it in the Mail Console. Every check passes, but the link is a fake sign-in page.",
-   "at": 3.4
+   "text": "The print server can't reach it. Check the firewall's DHCP leases.",
+   "at": 4.6
   },
   {
-   "text": "A real supplier got hacked. Delete every copy and block the link, not their domain.",
-   "at": 9.5
+   "text": "It got a new address. Point the queue at it, then reserve it.",
+   "at": 10.0
   },
   {
-   "text": "Then close the ticket as done.",
-   "at": 16.0
+   "text": "It's printing again. Close the ticket as done.",
+   "at": 16.5
   }
  ]
 }
