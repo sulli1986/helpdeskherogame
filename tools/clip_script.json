@@ -1,20 +1,20 @@
 {
- "day": 13,
+ "day": 14,
  "lines": [
   {
-   "text": "The printer's down and invoices are due. Fix it on the network map."
+   "text": "The whole office is offline. Find the cause on the network map."
   },
   {
-   "text": "The print server can't reach it. Check the firewall's DHCP leases.",
-   "at": 4.6
+   "text": "The domain controller's DNS forwarders are timing out.",
+   "at": 13.5
   },
   {
-   "text": "It got a new address. Point the queue at it, then reserve it.",
-   "at": 10.0
+   "text": "Yesterday's firewall rule blocks its lookups. Add a narrow allow rule.",
+   "at": 17.0
   },
   {
-   "text": "It's printing again. Close the ticket as done.",
-   "at": 16.5
+   "text": "Then test it from their PC.",
+   "at": 23.0
   }
  ]
 }

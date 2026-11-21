@@ -1,5 +1,10 @@
 # Changelog
 
+## Day 14 — 2026-11-22
+- Fix the outage yourself: once you've diagnosed "The internet is down!", the fix step happens on the Network Map, now with the client's ISP, modem, firewall and domain controller
+- Find out why: the ISP's status page, the modem's lights, the firewall's links, rules and log, and the domain controller's DNS forwarders, DHCP and event log. Then fix the cause: new forwarders, a narrow firewall rule, the modem's power, the DHCP service or its authorisation
+- An ISP outage? Log the fault, fail over to the 4G/5G backup if the site has one, and hold. Factory resets, switching off a firewall rule, or pointing PCs at public DNS all count against you
+
 ## Day 13 — 2026-11-21
 - Trace the dead printer yourself: "Printer not printing" tickets are now worked on the Network Map, a new Toolbox tab with the client's firewall, switch, print server and printers
 - Ping it from the print server, open its web page, check the switch ports and the firewall's DHCP leases, or ask the caller to read its screen. Then fix it: cancel the stuck job, resume the queue, re-point the port at the printer's new address and reserve it, or get the cable plugged back in

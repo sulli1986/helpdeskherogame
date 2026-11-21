@@ -33,7 +33,7 @@ const TOOL_ABOUT := {
 	"accounts": "Accounts: the client's users, groups, licences and sign-in settings. Nothing on this ticket needs a change here.",
 	"remote": "Remote Control: connect to one of the client's PCs and work on it. Nothing on this ticket needs it.",
 	"mail": "Mail Console: the client's message trace, quarantine and block list. Nothing on this ticket needs it.",
-	"net": "Network Map: the client's firewall, switch, print server and printers. Nothing on this ticket needs it.",
+	"net": "Network Map: the client's ISP link, firewall, servers, switch and printers. Nothing on this ticket needs it.",
 }
 ## Commands offered as tap-to-run buttons under the prompt on touchscreens.
 const TERM_CHIPS := ["ipconfig", "ping 192.168.1.1", "ping 1.1.1.1", "nslookup google.com", "tracert 1.1.1.1",
@@ -339,6 +339,11 @@ func _advance_step(t: Dictionary) -> void:
 		t.term.fault = st.term_fault
 	for k in ["question", "explain"]:
 		t[k] = st[k]
+	if st.has("net"):  # this step is worked on the Network Map, then closed Fixed / Hold
+		t.net = st.net
+	else:
+		t.erase("net")
+		t.tab = "ticket"
 	if st.has("actions"):  # an admin-console checklist instead of options
 		t.actions = st.actions
 		t.options = []

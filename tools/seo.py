@@ -27,7 +27,7 @@ ABOUT = [
     "Spot phishing emails from their headers and purge them from every mailbox, unlock accounts, sort out share access, trace dead printers across the network map, "
     "remote onto PCs to install the right scanner driver, license new starters (freeing a leaver's licence when none are spare), contain MFA fatigue attacks from the sign-in logs, and diagnose "
     "network outages by typing ipconfig, ping, nslookup and tracert into a simulated command prompt, "
-    "then fix the server or router and prove the fix worked.",
+    "then find the cause on the network map (ISP, modem, firewall rules, DNS forwarders, DHCP), fix it, then prove the fix worked.",
     "Fast, correct fixes earn cash and reputation; wrong calls and SLA breaches cost you the client. "
     "Make a free account to save your career and climb the leaderboard.",
     "An AI makes one improvement to the game every day.",

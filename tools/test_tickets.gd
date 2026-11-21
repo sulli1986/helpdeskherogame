@@ -82,6 +82,9 @@ func _check(kind: String, t: Dictionary) -> void:
 				else:
 					_check_options(kind, st.options, st.answer)
 					text += " " + " ".join(st.options).to_lower()
+				if st.has("net"):
+					_check_office(kind, st)
+					text += " " + " ".join(st.net.changes + st.net.log + st.net.events).to_lower()
 				for k in ["name", "info_add", "question", "explain"]:
 					if str(st[k]).strip_edges() == "":
 						_fail(kind, "empty step '%s'" % k)
@@ -204,6 +207,76 @@ func _check_net(kind: String, t: Dictionary) -> void:
 		N.apply(h, a, goal.other)
 		if not N.check(h, goal.hold).is_empty():
 			_fail(kind, "net: harmless %s was judged wrong" % a)
+
+
+## Network Map, office mode (the fix step of an "internet is down" ticket): Fixed / Hold; the right fix
+## must pass (and the other close must not), the untouched network and half-fixes must fail, every
+## harmful action on top of the fix must be caught and harmless checks must not count against you.
+func _check_office(kind: String, st: Dictionary) -> void:
+	var O = load("res://scripts/netmap_office.gd")
+	var n: Dictionary = st.net
+	var goal: Dictionary = n.goal
+	var key: String = "%s%d" % [goal.fault, goal.sub]
+	if st.options.size() != 2 or st.answer != (1 if goal.hold else 0):
+		_fail(kind, "office: options must be Fixed / Hold, answer matching goal.hold")
+	if O.why_not(n) == "" and not goal.hold:
+		_fail(kind, "office: the network starts out working (%s)" % key)
+	if O.check(n, false).is_empty() or O.check(n, true).is_empty():
+		_fail(kind, "office: untouched network judged right (%s)" % key)
+	var fix: Array = {"dns0": ["set_fwd"], "dns1": ["allow_dns"], "wan0": ["isp_fault"], "wan1": ["modem_check"],
+		"dhcp0": ["start_dhcp", "recovery"], "dhcp1": ["authorize"]}[key]
+	if key == "wan0" and n.backup:
+		fix.append("failover")
+	var ok: Dictionary = n.duplicate(true)
+	for f in fix:
+		O.apply(ok, f, "")
+	if not O.check(ok, goal.hold).is_empty() or O.check(ok, not goal.hold).is_empty():
+		_fail(kind, "office: the right fix doesn't pass (%s): %s" % [key, str(O.check(ok, goal.hold))])
+		return
+	if not goal.hold and O.why_not(ok) != "":
+		_fail(kind, "office: still broken after the fix (%s)" % key)
+	if fix.size() > 1:  # every part of a multi-part fix is needed
+		for skip in fix:
+			var half: Dictionary = n.duplicate(true)
+			for f in fix:
+				if f != skip:
+					O.apply(half, f, "")
+			if O.check(half, goal.hold).is_empty():
+				_fail(kind, "office: skipping %s wasn't caught (%s)" % [skip, key])
+	var bad: Array = [["factory", ""], ["scope_dns", ""]]
+	for r in n.rules:
+		bad.append(["rule_off", r.name])
+	if key != "wan0":
+		bad.append(["isp_fault", ""])
+	if goal.fault != "wan":
+		bad.append(["failover", ""])
+	for b in bad:
+		var w: Dictionary = n.duplicate(true)
+		for f in fix:
+			O.apply(w, f, "")
+		O.apply(w, b[0], b[1])
+		if O.check(w, goal.hold).is_empty():
+			_fail(kind, "office: harmful %s wasn't caught (%s)" % [str(b), key])
+	var harmless: Array = ["restart_fw", "clear_cache", "modem_check", "authorize"]
+	if not goal.hold and goal.fault != "dns":
+		harmless.append("set_fwd")
+	for a in harmless:
+		var h: Dictionary = n.duplicate(true)
+		for f in fix:
+			O.apply(h, f, "")
+		O.apply(h, a, "")
+		if not O.check(h, goal.hold).is_empty():
+			_fail(kind, "office: harmless %s was judged wrong (%s): %s" % [a, key, str(O.check(h, goal.hold))])
+	if key == "wan1" and n.backup:  # running on the backup with the modem still dark isn't fixed
+		var bk: Dictionary = n.duplicate(true)
+		O.apply(bk, "failover", "")
+		if O.check(bk, false).is_empty():
+			_fail(kind, "office: failover alone accepted for a powerless modem")
+	var cheat: Dictionary = n.duplicate(true)  # disabling the culprit rule works, but isn't the fix
+	if key == "dns1":
+		O.apply(cheat, "rule_off", "Servers: HTTPS out only")
+		if O.check(cheat, false).is_empty():
+			_fail(kind, "office: disabling the lockdown rule was accepted")
 
 
 ## Toolbox > Accounts tickets: options are Done / Hold; the goal must be reachable in the tool and

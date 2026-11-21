@@ -9,7 +9,7 @@ const END_AT := 27.0
 const READ_TIME := 2.4      # seconds "reading" a ticket before answering
 const RESULT_TIME := 1.8    # seconds showing the explanation
 const WRONG_AT := 17.0      # one deliberate wrong call after the feature (shows the penalty)
-const SEED := 41            # Day 13: a printer that got a new DHCP address after DHCP moved to the firewall
+const SEED := 3             # Day 14: an outage caused by yesterday's firewall rule blocking DC01's DNS (set below)
 
 var main: Node
 var desk: Node
@@ -53,7 +53,7 @@ func _start_shift() -> void:
 	main.summary.visible = false
 	desk.spawn_scale = 4.0
 	desk.clock_scale = 8.0   # the clock visibly moves, but the shift doesn't end in the clip
-	desk.first_kind = "printer"  # Day 13: open on a printer ticket, worked in Toolbox > Network Map
+	desk.first_kind = "network"  # Day 14: open on "The internet is down!", whose fix is now done on the Network Map
 	desk.start(SEED)
 	_auto = true
 	_step_t = 2.8  # the hook line plays over the first ticket
@@ -79,7 +79,7 @@ func _process(delta: float) -> void:
 		_step_t = READ_TIME
 	elif desk.current.has("term") and desk.current.get("term_live", true) and desk.current.get("demo_typed", 0) != desk.current.get("step_no", 1):
 		desk.current.demo_typed = desk.current.get("step_no", 1)  # Day 4: investigate in the command prompt
-		_typing = ["ipconfig", "ping 1.1.1.1", "nslookup google.com"]
+		_typing = ["ping 1.1.1.1", "nslookup google.com"]
 		if desk.current.get("step_no", 1) > 1:  # Day 6: the verify step: prove the fix from the PC
 			_typing = ["ipconfig /renew", "ping 1.1.1.1"] if desk.current.term.fault == "renew" else ["nslookup google.com", "ping 1.1.1.1"]
 		_typed = ""
@@ -114,7 +114,10 @@ func _process(delta: float) -> void:
 		_step_t = 0.2
 	elif desk.current.has("net") and not desk.current.get("demo_planned", false):
 		desk.current.demo_planned = true
-		_plan_net(desk.current)
+		if desk.current.net.get("mode", "") == "office":
+			_plan_office(desk.current)
+		else:
+			_plan_net(desk.current)
 		_step_t = 0.2
 	elif desk.current.has("actions"):
 		# Day 8: tick the actions the account needs one by one, then Apply.
@@ -247,6 +250,29 @@ func _plan_net(t: Dictionary) -> void:
 			var fix: String = {"cable": "cable", "toner_spare": "spare", "toner_order": "order", "fuser": "service"}[goal.fault]
 			_plan.append([nm.act.bind(fix, goal.mfp), 0.1])
 			_plan.append([_scroll_to_end, 1.6])
+	_plan.append([desk.answer.bind(1 if goal.hold else 0), RESULT_TIME + 1.0])
+
+
+## Day 14: the fix step of "The internet is down!" on the Network Map: check DC01's forwarders, find
+## why in FW01's rules and log, make the fix there (or on DC01, the modem or with the ISP), close it.
+func _plan_office(t: Dictionary) -> void:
+	var nm: Node = desk._net
+	var goal: Dictionary = t.net.goal
+	var key: String = "%s%d" % [goal.fault, goal.sub]
+	var dev: String = {"dns0": "DC01", "dns1": "FW01", "wan0": "ISP", "wan1": "MODEM", "dhcp0": "DC01", "dhcp1": "DC01"}[key]
+	_plan = [[desk.show_tab.bind("net"), 1.4]]                # the map: DC01 has a warning
+	if key == "dns1":
+		_plan.append_array([[nm.select.bind("DC01"), 0.1], [func() -> void: _scroll_to(nm.focus), 1.8]])  # forwarders time out
+	_plan.append_array([[nm.select.bind(dev), 0.1], [func() -> void: _scroll_to(nm.focus), 1.2]])
+	if key == "dns1":
+		_plan.append([_scroll_to_end, 2.2])                    # the log: DENY by yesterday's rule
+	var fix: Array = {"dns0": ["set_fwd"], "dns1": ["allow_dns"], "wan0": ["isp_fault"], "wan1": ["modem_check"],
+		"dhcp0": ["start_dhcp", "recovery"], "dhcp1": ["authorize"]}[key]
+	if key == "wan0" and t.net.backup:
+		fix.append("failover")
+	for f in fix:
+		_plan.append([nm.act.bind(f, dev), 0.1])
+		_plan.append([_scroll_to_end if key != "dns1" else func() -> void: _scroll_to(nm.focus), 1.6])
 	_plan.append([desk.answer.bind(1 if goal.hold else 0), RESULT_TIME + 1.0])
 
 

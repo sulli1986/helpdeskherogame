@@ -55,7 +55,7 @@ func make(kind := "") -> Dictionary:
 	if not t.has("acct") and not t.has("rc") and not t.has("mail") and not t.has("net"):  # Toolbox tickets keep "Done" / "Hold" in that order
 		_shuffle_options(t)
 	for st in t.get("steps", []):
-		if st.has("options"):  # console steps ("actions") keep their admin-console order
+		if st.has("options") and not st.has("net"):  # console and Toolbox steps keep their order
 			_shuffle_options(st)
 	return t
 
@@ -470,64 +470,88 @@ func _make_network(c: Dictionary) -> Dictionary:
 			"The gateway replies but nothing past it does: ping 1.1.1.1 times out and tracert dies after hop 1. Names fail too, only because the DNS server can't reach the internet either. It's the WAN link. Next: find out why.",
 			"ipconfig shows a 169.254 address with no gateway, and renewing the lease can't reach a DHCP server: the PC has no lease. Next: find out why the DHCP server isn't answering."][v],
 		"step_name": "Diagnose",
-		"steps": [_network_fix(fault, term, c.first), _network_verify(fault, c.first)],
+		"steps": [_network_fix(fault, term, c), _network_verify(fault, c.first)],
 	}
 
 
-## Step 2 of a network ticket: you're now on the server/router, and the evidence says why it broke.
-func _network_fix(fault: String, term: Dictionary, first: String) -> Dictionary:
+## Step 2 of a network ticket: done in Toolbox > Network Map (netmap_office.gd). The diagnosis says
+## what broke; the map shows why (ISP status, modem lights, FW01's links, rules and log, DC01's forwarders,
+## DHCP console, services and event log) and has the fixes, plus traps. Closed Fixed / Hold (ISP outage).
+func _network_fix(fault: String, term: Dictionary, c: Dictionary) -> Dictionary:
 	var sub := rng.randi() % 2
-	var info := ""
-	var options: Array = []
+	var first: String = c.first
+	var net := {
+		"mode": "office", "caller": first, "domain": c.domain, "isp_eta": "%d:%02d" % [rng.randi_range(12, 15), [0, 15, 30, 45][rng.randi() % 4]],
+		"ref": "F%d" % rng.randi_range(100000, 999999), "public_ip": "198.51.100.%d" % rng.randi_range(2, 250),
+		"backup": rng.randf() < 0.5, "modem_power": true, "modem_read": false, "on_wan2": false, "reset": false,
+		"rules": [
+			{"name": "Guest Wi-Fi: block LAN", "note": "BLOCK  Guest Wi-Fi: block LAN   192.168.50.0/24 -> 192.168.1.0/24 any", "on": true, "culprit": false},
+			{"name": "Default: allow out", "note": "ALLOW  Default: allow out      192.168.1.0/24 -> any  any", "on": true, "culprit": false},
+		],
+		"allow_dns": false, "fwd": ["1.1.1.1", "8.8.8.8"], "fwd_ok": true,
+		"dhcp_running": true, "recovery": "Take No Action", "authorized": true, "scope_dns": "192.168.1.10",
+		"changes": [], "log": [], "events": [], "done": [],
+		"goal": {"fault": fault, "sub": sub, "hold": fault == "wan" and sub == 0},
+	}
+	var changes: Array = [_pick(["Last week: a new Wi-Fi access point was fitted in the meeting room",
+		"Monday:    two new laptops joined the domain", "Last week: FW01's firmware was updated, tested OK"])]
+	var fw_log: Array = []
+	if fault == "dns":
+		fw_log.append("%s -> 1.1.1.1 icmp ALLOW (%s)" % [term.ip, term.host])
+	elif fault == "dhcp":
+		fw_log.append_array(["192.168.1.10 -> 1.1.1.1 udp/53 ALLOW", "192.168.1.10 -> 13.107.4.50 tcp/443 ALLOW"])
+	var events: Array = ["Information  Service Control Manager 7036: The Windows Update service entered the stopped state."]
 	var explain := ""
 	match fault:
 		"dns":
-			options = [
-				"Replace the dead forwarder with working resolvers, then clear the DNS server cache",
-				"Allow DNS (UDP and TCP 53) out from DC01 on the firewall",
-				"Point every PC's DNS straight at 8.8.8.8",
-				"Run ipconfig /flushdns on every PC",
-			]
 			if sub == 0:
-				info = "DNS Manager on DC01 > Forwarders:\n  203.0.113.53   <Timed out>   (old ISP's resolver; the client changed ISP last month)\n  Use root hints if no forwarders are available: off\nFirewall log: 192.168.1.10 -> 203.0.113.53 udp/53 ALLOW (no reply)"
-				explain = "The only forwarder is the old ISP's resolver, which no longer answers, and root hints are off, so DC01 has nowhere to send outside lookups. Swap in working resolvers and clear the server cache. Pointing PCs at 8.8.8.8 would break Active Directory, which needs the DC for DNS."
+				net.fwd = ["203.0.113.53"]
+				net.fwd_ok = false
+				changes.append("Last month: the client moved to a new ISP")
+				fw_log.append_array(["192.168.1.10 -> 203.0.113.53 udp/53 ALLOW (no reply)", "192.168.1.10 -> 203.0.113.53 udp/53 ALLOW (no reply)"])
+				explain = "DC01's only forwarder was the old ISP's resolver, 203.0.113.53. The firewall let the queries out, but that ISP no longer answers them, and root hints are off, so DC01 had nowhere to send outside lookups. Replacing the forwarders fixes it (clearing the server cache is a harmless extra). Pointing PCs at 8.8.8.8 would break Active Directory, which needs the DC for DNS."
 			else:
-				info = "DNS Manager on DC01 > Forwarders:\n  1.1.1.1   <Timed out>\n  8.8.8.8   <Timed out>\nFirewall log: 192.168.1.10 -> 1.1.1.1 udp/53 DENY (rule \"Servers: HTTPS out only\", added yesterday)\n              192.168.1.10 -> 8.8.8.8 udp/53 DENY (same rule)\n              %s -> 8.8.8.8 udp/53 ALLOW  (%s)" % [term.ip, term.host]
-				explain = "The forwarders are fine, but yesterday's firewall rule only lets DC01 out on HTTPS, so its DNS queries are dropped (PCs can still reach 8.8.8.8, which is why that nslookup worked). Allow DNS out from the DC. Pointing PCs at 8.8.8.8 would break Active Directory."
+				net.rules.insert(0, {"name": "Servers: HTTPS out only", "note": "BLOCK  Servers: HTTPS out only  192.168.1.10-19 -> any  all except TCP 443   (added yesterday)", "on": true, "culprit": true})
+				changes.append("Yesterday: rule \"Servers: HTTPS out only\" added on FW01 (security review)")
+				fw_log.append_array(["192.168.1.10 -> 1.1.1.1 udp/53 DENY (rule \"Servers: HTTPS out only\")",
+					"192.168.1.10 -> 8.8.8.8 udp/53 DENY (rule \"Servers: HTTPS out only\")",
+					"%s -> 8.8.8.8 udp/53 ALLOW (%s)" % [term.ip, term.host]])
+				explain = "The forwarders were fine, but yesterday's rule only lets the servers out on HTTPS, so DC01's DNS queries were dropped (PCs could still reach 8.8.8.8, which is why that nslookup worked). A narrow rule above it allowing DNS out from DC01 fixes it and keeps the lockdown. Rolling back the whole rule undoes the security review; pointing PCs at 8.8.8.8 would break Active Directory."
 		"wan":
-			options = [
-				"Log a fault with the ISP, fail over to the 4G/5G backup if there is one, and give the client an ETA",
-				"Have someone onsite check the ISP modem's power and cabling before calling the ISP",
-				"Factory-reset the office router",
-				"Change DC01's DNS forwarders",
-			]
 			if sub == 0:
-				info = "Router (%s) > WAN1:\n  Link: up   Public IP: none (no reply from the ISP)\n  ISP modem lights: power and line normal, internet off\nISP status page: outage reported in the client's area, ETA 2 hours" % term.gw
-				explain = "The cable and modem are fine and the ISP has confirmed an outage. Log it so you're on their list, fail over to a backup link if the client has one, and tell the client the ETA. Factory-resetting the router just loses its config."
+				fw_log.append_array(["WAN1: DHCP request to the ISP: no reply", "WAN1: DHCP request to the ISP: no reply"])
+				explain = "The modem had power and line, FW01's link was up but the ISP gave it no address, and the ISP's status page showed an outage. Log the fault so you're on their list and have a reference, fail over to the 4G/5G backup if the site has one, and hold the ticket with the ETA. A factory reset only loses the router's config."
+				if net.backup:
+					explain = explain.replace("if the site has one", "(this site has one)")
 			else:
-				info = "Router (%s) > WAN1:\n  Link: DOWN (no carrier)\n  ISP modem lights: all off\nISP status page: no known issues\nCabinet: router is on the UPS; the modem plugs into a separate power strip\nCall notes: the cleaners were in the network cabinet last night" % term.gw
-				explain = "No carrier and a dark modem means it has no power, not an ISP fault. Get someone onsite to check the power and cable first; calling the ISP now wastes time and can cost a fee if they send a technician."
+				net.modem_power = false
+				changes.append("Last night: the cleaners were in the network cabinet")
+				fw_log.append_array(["WAN1: link down (no carrier)", "WAN1: link down (no carrier)"])
+				explain = "WAN1 had no carrier and the modem was dark, while the ISP reported no issues and FW01, on the UPS, was fine. The modem's own power strip had been switched off. Getting someone onsite to check the power fixes it at no cost; logging an ISP fault first wastes time and can mean a charge for a technician visit."
 		_:  # dhcp
-			options = [
-				"Start the DHCP Server service and set it to restart on failure",
-				"Authorise DC01's DHCP server in Active Directory",
-				"Give every PC a static IP address",
-				"Restart the office router",
-			]
 			if sub == 0:
-				info = "DC01 > Services:\n  DHCP Server   Stopped   (Startup: Automatic, Recovery: Take No Action)\nSystem log, event 7031: the DHCP Server service terminated unexpectedly during last night's updates\nScope 192.168.1.50-192.168.1.199 (150 addresses): about 64 in use at yesterday's close"
-				explain = "The DHCP Server service stopped and nothing restarted it. Start it and set its recovery options to restart on failure; PCs will pick up leases on their next retry or an ipconfig /renew. Static IPs for everyone is a maintenance nightmare."
+				net.dhcp_running = false
+				changes.append("Last night: Windows updates installed on DC01; it restarted at 02:10")
+				events.push_front("Error        Service Control Manager 7034 (02:16): The DHCP Server service terminated unexpectedly. It has done this 1 time(s).")
+				explain = "The DHCP Server service crashed a few minutes after last night's post-update restart, and its recovery was set to take no action, so nothing restarted it. Start it and set recovery to restart the service; PCs pick up leases on their next retry or an ipconfig /renew. Changing DNS or the firewall wouldn't help."
 			else:
-				info = "DC01 > Services:\n  DHCP Server   Running\nSystem log, event 1046: the DHCP service has determined that it is not authorized to service clients on this network\nChange log: DHCP was migrated to DC01 from the old server last night"
-				explain = "The service is running, but in an Active Directory domain a Windows DHCP server won't hand out leases until it's authorised in AD, and the migration missed that step. Authorise it (DHCP console > right-click the server > Authorize). Restarting the router won't help: DC01 is the DHCP server here, not the router."
+				net.authorized = false
+				changes.append("Last night: DHCP migrated to DC01 from the old server")
+				events.push_front("Error        DHCP-Server 1046: The DHCP/BINL service on the local machine, belonging to the Windows Administrative domain %s, has determined that it is not authorized to service clients on this network." % c.domain)
+				explain = "The service was running, but in an Active Directory domain a Windows DHCP server won't hand out leases until it's authorised in AD, and last night's migration missed that step. Authorise it in the DHCP console. Restarting the router won't help: DC01 is the DHCP server here, not FW01."
+	if rng.randf() < 0.5:
+		changes.reverse()
+	net.changes = changes
+	net.log = fw_log
+	net.events = events
 	return {
 		"name": "Fix",
-		"info_add": ("\n--- %s opens the router's status page (http://%s) and reads it out ---\n%s\n" % [first, term.gw, info] if fault == "wan"
-			else "\n--- You remote onto DC01 to find out why ---\n%s\n" % info),
-		"question": "How do you fix it?",
-		"options": options,
-		"answer": sub,
+		"info_add": "\n--- Diagnosis done. Now find out why it broke, and fix it, on the Network Map tab ---\n",
+		"question": "On the Network Map tab (T): find out why and fix it, then close this step here",
+		"options": ["Fixed: test it from %s's PC" % first, "Hold: it's waiting on the ISP. Give the client the ETA"],
+		"answer": 1 if net.goal.hold else 0,
 		"explain": explain,
+		"net": net,
 	}
 
 
@@ -564,7 +588,7 @@ func _network_verify(fault: String, first: String) -> Dictionary:
 	return {
 		"name": "Verify",
 		"info_add": "\n--- %s Back on the phone with %s: prove it from their PC before you close it ---\n" % [
-			"Later: the internet link is back up." if fault == "wan" else "Fix applied on DC01.", first],
+			"The internet link is back up." if fault == "wan" else "Fix applied.", first],
 		"question": "Which result proves it's fixed?",
 		"options": options,
 		"answer": 0,

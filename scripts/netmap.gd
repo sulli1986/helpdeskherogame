@@ -11,10 +11,15 @@ extends VBoxContainer
 ## act = {act, dev, arg}: cancel / resume / port (arg = new IP) / spooler (arg = jobs it threw away) /
 ##       reserve (dev = host) / bounce / cable / spare / order / service
 ## goal = {fault ("job"/"paused"/"ip"/"cable"/"toner_spare"/"toner_order"/"fuser"), mfp, other, new_ip, hold, hold_why}
+## net.mode == "office": the fix step of an "internet is down" ticket instead (ISP, modem, FW01, DC01);
+## its data, actions, checks and panels live in netmap_office.gd.
 
 signal changed
 
 const UI := preload("res://scripts/ui.gd")
+const Office := preload("res://scripts/netmap_office.gd")
+const HINT_PRINT := "Changes can't be undone, so find the fault before you fix it. Then close it on the Ticket tab: Done once it's printing, or Hold while it waits on the vendor or a part."
+const HINT_OFFICE := "Changes can't be undone, so find out why before you fix it. Then close the step on the Ticket tab: Fixed to test it from the caller's PC, or Hold while it waits on the ISP."
 const SAY := Color("ffd27a")     # what the caller says on the phone
 
 var net: Dictionary = {}
@@ -24,6 +29,7 @@ var last_msg := ""        # result of the last action or check
 var panel_read := {}      # printers whose control panel the caller has read out
 var _enabled := true
 var _title: Label
+var _hint: Label
 var _body: VBoxContainer
 var _port_edit := {}      # printer name -> its port LineEdit on PRINT01
 var focus: Control        # the panel of the device on show (the demo scrolls to it)
@@ -35,7 +41,7 @@ func _init() -> void:
 	_body = VBoxContainer.new()
 	_body.add_theme_constant_override("separation", 8)
 	add_child(_body)
-	UI.wrap(UI.label(self, "Changes can't be undone, so find the fault before you fix it. Then close it on the Ticket tab: Done once it's printing, or Hold while it waits on the vendor or a part.", 13, UI.MUTED))
+	_hint = UI.wrap(UI.label(self, HINT_PRINT, 13, UI.MUTED))
 
 
 func open(n: Dictionary, client: String, enabled := true) -> void:
@@ -46,6 +52,7 @@ func open(n: Dictionary, client: String, enabled := true) -> void:
 	net = n
 	_enabled = enabled
 	_title.text = "Toolbox  ›  Network Map  ·  %s" % client
+	_hint.text = HINT_OFFICE if office() else HINT_PRINT
 	_refresh()
 
 
@@ -87,8 +94,23 @@ func read_panel(name: String) -> void:
 	_refresh()
 
 
+## Office mode: the caller reads out the ISP modem's lights.
+func read_modem() -> void:
+	net.modem_read = true
+	_refresh()
+
+
+func office() -> bool:
+	return net.get("mode", "") == "office"
+
+
 func act(what: String, dev: String, arg = null) -> void:
 	if not _enabled or net.is_empty():
+		return
+	if office():
+		last_msg = Office.apply(net, what, dev)
+		_refresh()
+		changed.emit()
 		return
 	if what == "port":
 		arg = str(arg).strip_edges()
@@ -183,6 +205,8 @@ static func device_at(n: Dictionary, ip: String) -> Dictionary:
 
 ## What's wrong, given the player finished ("Done") or held it. Empty = right.
 static func check(n: Dictionary, held: bool) -> Array:
+	if n.get("mode", "") == "office":
+		return Office.check(n, held)
 	var goal: Dictionary = n.goal
 	var out: Array = []
 	var did := {}
@@ -290,10 +314,10 @@ func _refresh() -> void:
 	UI.label(_body, "Recent changes", 13, UI.MUTED)
 	_mono(_body, "\n".join(net.changes))
 	UI.label(_body, "Devices (pick one to open it)", 13, UI.MUTED)
-	var devs: Array = [["FW01", "Firewall + DHCP server  ·  internet up", 0],
+	var devs: Array = Office.devices(net) if office() else [["FW01", "Firewall + DHCP server  ·  internet up", 0],
 		["SW01", "Switch  ·  %d ports up" % (12 + net.mfps.filter(func(m: Dictionary) -> bool: return m.link).size()), 0],
 		["PRINT01", "Print server  ·  %s" % _print01_summary(), 0 if net.mfps.all(func(m: Dictionary) -> bool: return queue_status(net, m) == "Ready") else 1]]
-	for m in net.mfps:
+	for m in net.get("mfps", []):
 		devs.append([m.name, "Printer  ·  switch port %d: %s" % [m.sw_port, "link up" if m.link else "NO LINK"], 0 if m.link else 2])
 	for d in devs:
 		var dot: String = ["●", "▲", "✖"][d[2]]
@@ -311,15 +335,18 @@ func _refresh() -> void:
 	var v := VBoxContainer.new()
 	v.add_theme_constant_override("separation", 8)
 	panel.add_child(v)
-	match selected:
-		"FW01":
-			_fw(v)
-		"SW01":
-			_switch(v)
-		"PRINT01":
-			_print01(v)
-		_:
-			_printer(v, mfp_in(net, selected))
+	if office():
+		Office.build(self, v, selected)
+	else:
+		match selected:
+			"FW01":
+				_fw(v)
+			"SW01":
+				_switch(v)
+			"PRINT01":
+				_print01(v)
+			_:
+				_printer(v, mfp_in(net, selected))
 	if last_msg != "":
 		var res := PanelContainer.new()
 		res.add_theme_stylebox_override("panel", UI.box(UI.CONSOLE, 4, 8))
