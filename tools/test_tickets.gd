@@ -30,15 +30,14 @@ func _init() -> void:
 			_check(kind, t)
 			if t.has("options") and t.has("answer") and t.answer >= 0 and t.answer < t.options.size():
 				answers[t.options[t.answer]] = true
+			if t.has("acct"):  # Toolbox work: what has to be done in the tool must vary too
+				var gl: Dictionary = t.acct.goal.duplicate()
+				gl.erase("sam")
+				gl.erase("hold_why")
+				answers["acct:" + str(gl)] = true
 			for si in t.get("steps", []).size():  # later steps must vary too
 				var st: Dictionary = t.steps[si]
-				if st.has("actions"):
-					var need: Array = []
-					for a in st.actions:
-						if a.get("need", 0) == 1:
-							need.append(a.text)
-					answers["step%d:%s" % [si, "|".join(need)]] = true
-				elif st.get("options", []) is Array and st.get("answer", -1) is int and st.answer >= 0 and st.answer < st.options.size():
+				if st.get("options", []) is Array and st.get("answer", -1) is int and st.answer >= 0 and st.answer < st.options.size():
 					answers["step%d:%s" % [si, st.options[st.answer]]] = true
 		# A ticket type whose right answer never varies is a memory test, not a puzzle.
 		if answers.size() < 2:
@@ -70,18 +69,13 @@ func _check(kind: String, t: Dictionary) -> void:
 		else:
 			for st in t.steps:
 				var keys := ["name", "info_add", "question", "explain"]
-				keys.append_array(["actions"] if st.has("actions") else ["options", "answer"])
+				keys.append_array(["options", "answer"])
 				for k in keys:
 					if not st.has(k):
 						_fail(kind, "step missing field '%s'" % k)
 						return
-				if st.has("actions"):
-					_check_actions(kind, st.actions)
-					for a in st.actions:
-						text += " " + str(a.get("text", "")).to_lower()
-				else:
-					_check_options(kind, st.options, st.answer)
-					text += " " + " ".join(st.options).to_lower()
+				_check_options(kind, st.options, st.answer)
+				text += " " + " ".join(st.options).to_lower()
 				if st.has("net"):
 					_check_office(kind, st)
 					text += " " + " ".join(st.net.changes + st.net.log + st.net.events).to_lower()
@@ -93,6 +87,8 @@ func _check(kind: String, t: Dictionary) -> void:
 		_check_acct(kind, t)
 		for u in t.acct.users:
 			text += " " + " ".join([u.name, u.title, u.upn, u.device, u.licence, " ".join(u.groups)]).to_lower()
+			if t.acct.get("security", false):
+				text += " " + " ".join(u.signins + u.sessions + u.auth.map(func(m): return m.text) + u.rules.map(func(r): return r.text)).to_lower()
 	if t.has("rc"):
 		_check_rc(kind, t)
 		for pc in t.rc.pcs:
@@ -131,26 +127,6 @@ func _check(kind: String, t: Dictionary) -> void:
 			_fail(kind, "region-specific term '%s'" % b)
 	if "%" in text.replace("%%", "") and ("%s" in text or "%d" in text):
 		_fail(kind, "unfilled format placeholder")
-
-
-## Admin-console checklist: keys 1-9 tick them, at least one must-do and one trap, unique texts.
-func _check_actions(kind: String, acts: Array) -> void:
-	if acts.size() < 2 or acts.size() > 9:
-		_fail(kind, "%d console actions (need 2-9)" % acts.size())
-	var seen := {}
-	var must := 0
-	var trap := 0
-	for a in acts:
-		if not (a is Dictionary) or not a.has("text") or not a.has("need") or not (a.need in [-1, 0, 1]):
-			_fail(kind, "bad console action %s" % str(a))
-			continue
-		if str(a.text).strip_edges() == "" or seen.has(a.text):
-			_fail(kind, "empty or duplicate console action '%s'" % a.text)
-		seen[a.text] = true
-		must += 1 if a.need == 1 else 0
-		trap += 1 if a.need == -1 else 0
-	if must == 0 or trap == 0:
-		_fail(kind, "console needs at least one must-do and one wrong action")
 
 
 ## Toolbox > Network Map tickets: Done / Hold; doing what the fault needs must pass (and the other
@@ -316,6 +292,11 @@ func _check_acct(kind: String, t: Dictionary) -> void:
 				u.must_change = a.goal.must_change
 				for g in a.goal.add:
 					u.groups.append(g)
+				if a.goal.get("revoke", false):
+					u.revoked = true
+					u.sessions = []
+				u.auth = u.get("auth", []).filter(func(m): return not m.id in a.goal.get("remove", []))
+				u.rules = u.get("rules", []).filter(func(r): return not r.id in a.goal.get("drop", []))
 		for u in b.users:  # licence tickets: free the leaver's first, then assign
 			if u.sam == a.goal.get("free", ""):
 				u.licence = "None"
@@ -326,6 +307,8 @@ func _check_acct(kind: String, t: Dictionary) -> void:
 				u.licence = a.goal.licence
 		if not A.check(b, false).is_empty() or A.check(b, true).is_empty():
 			_fail(kind, "solved directory doesn't pass: %s" % str(A.check(b, false)))
+	if a.get("security", false):
+		_check_security(kind, a)
 	if a.goal.has("licence"):
 		_check_licence(kind, a)
 	# Touching a colleague is always wrong.
@@ -542,3 +525,72 @@ func _fail(kind: String, msg: String) -> void:
 	fails += 1
 	if fails <= 20:
 		printerr("FAIL [%s] %s" % [kind, msg])
+
+
+## MFA tickets: every user has a security page; the attacker's items exist when the goal says so;
+## and each harmful move on top of the right fix (removing the user's own method or rule, turning
+## MFA off, trusting the attacker's IP, leaving sign-in blocked, skipping a must-do) is caught.
+func _check_security(kind: String, a: Dictionary) -> void:
+	var A = load("res://scripts/accounts.gd")
+	for u in a.users:
+		for k in ["signins", "sessions", "auth", "rules", "blocked", "revoked", "mfa_off", "trusted"]:
+			if not u.has(k):
+				_fail(kind, "security user missing '%s'" % k)
+				return
+	var t: Dictionary = {}
+	for u in a.users:
+		if u.sam == a.goal.sam:
+			t = u
+	for id in a.goal.remove:
+		if not t.auth.any(func(m): return m.id == id):
+			_fail(kind, "goal removes a method that isn't there")
+	for id in a.goal.drop:
+		if not t.rules.any(func(r): return r.id == id):
+			_fail(kind, "goal drops a rule that isn't there")
+	if not t.rules.any(func(r): return r.id == "own") or t.get("foreign_ip", "") == "":
+		_fail(kind, "caller needs an own rule and the attacker's IP")
+	if a.goal.revoke != t.signins.any(func(l): return "APPROVED" in l):
+		_fail(kind, "revoke goal doesn't match the sign-in log")
+	var solve := func() -> Dictionary:
+		var b: Dictionary = a.duplicate(true)
+		for u in b.users:
+			if u.sam == a.goal.sam:
+				u.reset = true
+				u.must_change = true
+				if a.goal.revoke:
+					u.revoked = true
+					u.sessions = []
+				u.auth = u.auth.filter(func(m): return not m.id in a.goal.remove)
+				u.rules = u.rules.filter(func(r): return not r.id in a.goal.drop)
+		return b
+	var harms := [
+		func(u): u.rules = u.rules.filter(func(r): return r.id != "own"),
+		func(u): u.auth = u.auth.filter(func(m): return m.id != "app"),
+		func(u): u.mfa_off = true,
+		func(u): u.trusted = u.foreign_ip,
+		func(u): u.blocked = true,
+		func(u): u.must_change = false,
+		func(u): u.reset = false,
+		func(u): u.auth = u.auth.filter(func(m): return m.id != "sms") if u.auth.any(func(m): return m.id == "sms") else [],
+	]
+	if a.goal.revoke:
+		harms.append(func(u): u.revoked = false)
+	if not a.goal.remove.is_empty():
+		harms.append(func(u): u.auth = a.orig.filter(func(o): return o.sam == a.goal.sam)[0].auth.duplicate(true))
+	if not a.goal.drop.is_empty():
+		harms.append(func(u): u.rules = a.orig.filter(func(o): return o.sam == a.goal.sam)[0].rules.duplicate(true))
+	for i in harms.size():
+		var b: Dictionary = solve.call()
+		for u in b.users:
+			if u.sam == a.goal.sam:
+				harms[i].call(u)
+		if A.check(b, false).is_empty():
+			_fail(kind, "harmful change %d on top of the fix wasn't caught" % i)
+	var other: Dictionary = solve.call()  # touching a colleague's account is caught too
+	for u in other.users:
+		if u.sam != a.goal.sam:
+			u.revoked = true
+			break
+	if A.check(other, false).is_empty():
+		_fail(kind, "changing a colleague's account wasn't caught")
+

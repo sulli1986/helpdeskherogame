@@ -9,7 +9,7 @@ const END_AT := 27.0
 const READ_TIME := 2.4      # seconds "reading" a ticket before answering
 const RESULT_TIME := 1.8    # seconds showing the explanation
 const WRONG_AT := 17.0      # one deliberate wrong call after the feature (shows the penalty)
-const SEED := 3             # Day 14: an outage caused by yesterday's firewall rule blocking DC01's DNS (set below)
+const SEED := 3             # Day 15: an MFA attack that got in, leaving an Authenticator and a hidden inbox rule
 
 var main: Node
 var desk: Node
@@ -53,7 +53,7 @@ func _start_shift() -> void:
 	main.summary.visible = false
 	desk.spawn_scale = 4.0
 	desk.clock_scale = 8.0   # the clock visibly moves, but the shift doesn't end in the clip
-	desk.first_kind = "network"  # Day 14: open on "The internet is down!", whose fix is now done on the Network Map
+	desk.first_kind = "mfa"  # Day 15: open on the MFA fatigue ticket, now contained in Accounts
 	desk.start(SEED)
 	_auto = true
 	_step_t = 2.8  # the hook line plays over the first ticket
@@ -119,15 +119,6 @@ func _process(delta: float) -> void:
 		else:
 			_plan_net(desk.current)
 		_step_t = 0.2
-	elif desk.current.has("actions"):
-		# Day 8: tick the actions the account needs one by one, then Apply.
-		for i in desk.current.actions.size():
-			if desk.current.actions[i].need == 1 and not desk._action_boxes[i].button_pressed:
-				desk.answer(i)
-				_step_t = 0.7
-				return
-		desk.apply_console()
-		_step_t = RESULT_TIME + 1.0
 	else:
 		var pick: int = desk.current.answer
 		if not _wrong_done and _t >= WRONG_AT:
@@ -147,6 +138,8 @@ func _plan_accounts(t: Dictionary) -> void:
 		[acc.select.bind(goal.sam), 0.1],
 		[_scroll_to.bind(acc._profile), 4.2],  # "check their mobile on file"
 	]
+	if t.acct.get("security", false):  # Day 15: read the sign-in log, then contain it
+		_plan.append([func() -> void: _scroll_to(acc.sec_log if acc.sec_log else acc), 3.2])
 	if not goal.hold:
 		if goal.unlock:
 			_plan.append([acc.unlock, 0.9])
@@ -164,6 +157,14 @@ func _plan_accounts(t: Dictionary) -> void:
 			_plan.append([acc.remove_licence, 1.2])
 			_plan.append([acc.select.bind(goal.sam), 0.1])
 			_plan.append([_scroll_to.bind(acc._profile), 1.2])
+		if goal.get("revoke", false):
+			_plan.append([acc.revoke_sessions, 1.2])
+		for id in goal.get("remove", []):
+			_plan.append([func() -> void: _scroll_to(acc.sec_log if acc.sec_log else acc), 0.6])
+			_plan.append([acc.remove_method.bind(id), 1.2])
+		for id in goal.get("drop", []):
+			_plan.append([func() -> void: _scroll_to(acc.sec_log if acc.sec_log else acc), 0.6])
+			_plan.append([acc.delete_rule.bind(id), 1.4])
 		if goal.has("licence"):
 			_plan.append([acc.assign_licence.bind(goal.licence), 1.2])
 			_plan.append([_scroll_to.bind(acc._lic_head), 1.6])

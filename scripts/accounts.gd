@@ -9,6 +9,11 @@ extends VBoxContainer
 ##         licence (optional: the licence the user must end up with), free (optional: the leaver whose
 ##         licence may be removed)}
 ## acct.skus (licence tickets only) = [{name, total, others}]: others = in use by staff not listed here.
+## acct.security (MFA tickets): each user also has signins: [String] (newest first), sessions: [String],
+##   auth: [{id, text}] (MFA methods), rules: [{id, text}] (inbox rules), blocked, revoked, mfa_off,
+##   trusted (an IP made a trusted location), foreign_ip (optional: the attacker's IP in their log).
+##   goal.revoke: sessions must be revoked; goal.remove / goal.drop: the auth / rule ids that are the
+##   attacker's. Removing any other method or rule is wrong, and sign-in must not be left blocked.
 
 signal changed
 
@@ -25,6 +30,8 @@ var _groups: VBoxContainer
 var _title: Label
 var _lic_head: Label
 var _lic: VBoxContainer
+var _sec: VBoxContainer   # MFA tickets: sign-in log, sessions, MFA methods, inbox rules
+var sec_log: Control      # the sign-in log box (the demo scrolls to it)
 
 
 func _init() -> void:
@@ -43,6 +50,9 @@ func _init() -> void:
 	_actions.add_theme_constant_override("h_separation", 6)
 	_actions.add_theme_constant_override("v_separation", 6)
 	add_child(_actions)
+	_sec = VBoxContainer.new()
+	_sec.add_theme_constant_override("separation", 6)
+	add_child(_sec)
 	_lic_head = UI.label(self, "Licences (whole company)", 13, UI.MUTED)
 	_lic = VBoxContainer.new()
 	_lic.add_theme_constant_override("separation", 4)
@@ -123,6 +133,51 @@ func remove_licence() -> void:
 		_changed()
 
 
+func block_signin(on: bool) -> void:
+	var u := _user(selected)
+	if _enabled and not u.is_empty() and u.get("blocked", false) != on:
+		u.blocked = on
+		_changed()
+
+
+## Sign them out everywhere: every refresh token and session is revoked.
+func revoke_sessions() -> void:
+	var u := _user(selected)
+	if _enabled and not u.is_empty() and not u.get("revoked", false):
+		u.revoked = true
+		u.sessions = []
+		_changed()
+
+
+func remove_method(id: String) -> void:
+	var u := _user(selected)
+	if _enabled and not u.is_empty():
+		u.auth = u.auth.filter(func(m: Dictionary) -> bool: return m.id != id)
+		_changed()
+
+
+func delete_rule(id: String) -> void:
+	var u := _user(selected)
+	if _enabled and not u.is_empty():
+		u.rules = u.rules.filter(func(r: Dictionary) -> bool: return r.id != id)
+		_changed()
+
+
+func set_mfa_off(on: bool) -> void:
+	var u := _user(selected)
+	if _enabled and not u.is_empty() and u.get("mfa_off", false) != on:
+		u.mfa_off = on
+		_changed()
+
+
+## Named locations are organisation-wide in Entra; the button sits on the user whose log shows the IP.
+func trust_ip(on := true) -> void:
+	var u := _user(selected)
+	if _enabled and not u.is_empty() and u.get("foreign_ip", "") != "":
+		u.trusted = u.foreign_ip if on else ""
+		_changed()
+
+
 ## Unassigned licences of this kind the company has paid for.
 static func spare(a: Dictionary, sku: String) -> int:
 	for s in a.get("skus", []):
@@ -167,6 +222,18 @@ static func check(a: Dictionary, held: bool) -> Array:
 			out.append("Turned on a password change nobody asked for")
 		if u.licence != o.licence and not goal.has("licence"):
 			out.append("Changed their licence: nobody asked for that")
+		for m in o.get("auth", []):
+			if not _has_id(u.auth, m.id) and not m.id in goal.get("remove", []):
+				out.append("Removed %s's own %s: they'd have to set it up again" % [u.name.get_slice(" ", 0), m.text.get_slice(" (", 0)])
+		for r in o.get("rules", []):
+			if not _has_id(u.rules, r.id) and not r.id in goal.get("drop", []):
+				out.append("Deleted %s's own inbox rule %s" % [u.name.get_slice(" ", 0), r.text.get_slice(" (", 0)])
+		if u.get("mfa_off", false):
+			out.append("Turned MFA off on an account under attack: the leaked password alone would let them in")
+		if u.get("trusted", "") != "":
+			out.append("Made the attacker's IP %s a trusted location" % u.trusted)
+		if u.get("blocked", false):
+			out.append("Left sign-in blocked, so %s can't work: unblock it once it's contained" % u.name.get_slice(" ", 0))
 	var t := _user_in(a.users, goal.sam)
 	if goal.hold:
 		if touched:
@@ -175,7 +242,7 @@ static func check(a: Dictionary, held: bool) -> Array:
 			out.push_front("Nothing to mark done: %s" % goal.hold_why)
 		return out
 	if held:
-		out.push_front("Held it, but this one was fine to do")
+		out.push_front(goal.get("held_msg", "Held it, but this one was fine to do"))
 		return out
 	if goal.unlock and t.locked:
 		out.append("%s is still locked out" % t.name)
@@ -186,6 +253,14 @@ static func check(a: Dictionary, held: bool) -> Array:
 	for g in goal.add:
 		if not g in t.groups:
 			out.append("%s isn't in %s" % [t.name, g])
+	if goal.get("revoke", false) and not t.get("revoked", false):
+		out.append("Sessions not revoked: the attacker's session is still signed in")
+	for m in t.get("auth", []):
+		if m.id in goal.get("remove", []):
+			out.append("The attacker's %s is still registered" % m.text.get_slice(" (", 0))
+	for r in t.get("rules", []):
+		if r.id in goal.get("drop", []):
+			out.append("The attacker's inbox rule %s is still hiding mail" % r.text.get_slice(" (", 0))
 	if goal.has("licence") and t.licence != goal.licence:
 		out.append("%s has %s, but needs %s" % [t.name, "no licence" if t.licence == "None" else t.licence.trim_prefix("Microsoft 365 "), goal.licence.trim_prefix("Microsoft 365 ")])
 	return out
@@ -207,7 +282,26 @@ static func _diffs(u: Dictionary, o: Dictionary) -> Array:
 		d.append("groups")
 	if u.licence != o.licence:
 		d.append("licence removed" if u.licence == "None" else "licence changed")
+	if u.get("blocked", false) != o.get("blocked", false):
+		d.append("sign-in blocked" if u.blocked else "sign-in unblocked")
+	if u.get("revoked", false) != o.get("revoked", false):
+		d.append("sessions revoked")
+	if u.get("auth", []).size() != o.get("auth", []).size():
+		d.append("MFA method removed")
+	if u.get("rules", []).size() != o.get("rules", []).size():
+		d.append("inbox rule deleted")
+	if u.get("mfa_off", false) != o.get("mfa_off", false):
+		d.append("MFA turned off")
+	if u.get("trusted", "") != o.get("trusted", ""):
+		d.append("trusted location added")
 	return d
+
+
+static func _has_id(items: Array, id: String) -> bool:
+	for x in items:
+		if x.id == id:
+			return true
+	return false
 
 
 static func _user_in(users: Array, sam: String) -> Dictionary:
@@ -236,6 +330,9 @@ func _refresh() -> void:
 		c.queue_free()
 	for c in _lic.get_children():
 		c.queue_free()
+	for c in _sec.get_children():
+		c.queue_free()
+	sec_log = null
 	_lic_head.visible = acct.has("skus")
 	_lic.visible = acct.has("skus")
 	if acct.is_empty():
@@ -262,11 +359,11 @@ func _refresh() -> void:
 	_profile.text = "\n".join([
 		"Name:        %s (%s)" % [u.name, u.title],
 		"Sign-in:     %s" % u.upn,
-		"Status:      %s" % ("LOCKED OUT, %s" % u.lock_info if u.locked else ("Disabled: %s" % u.left if u.has("left") else "Enabled")),
+		"Status:      %s" % ("LOCKED OUT, %s" % u.lock_info if u.locked else ("Disabled: %s" % u.left if u.has("left") else ("SIGN-IN BLOCKED" if u.get("blocked", false) else "Enabled"))),
 		"Password:    %s" % u.pwd,
 		"Change at next sign-in: %s" % ("Yes" if u.must_change else "No"),
 		"Mobile:      ending %s" % u.mobile,
-		"MFA:         %s" % u.methods,
+		"MFA:         %s" % ("OFF" if u.get("mfa_off", false) else u.methods),
 		"Licence:     %s" % u.licence,
 		"Devices:     %s" % u.device,
 	])
@@ -280,6 +377,10 @@ func _refresh() -> void:
 		_action(("Has %s" % short) if have else "Assign %s" % short, assign_licence.bind(s.name), not have and spare(acct, s.name) > 0)
 	if acct.has("skus"):
 		_action("Remove licence", remove_licence, u.licence != "None")
+	if acct.get("security", false):
+		_action("Unblock sign-in" if u.blocked else "Block sign-in", block_signin.bind(not u.blocked), true)
+		_action("Turn MFA back on" if u.mfa_off else "Turn off MFA for this user", set_mfa_off.bind(not u.mfa_off), true)
+		_build_security(u)
 	for g in acct.groups:
 		var cb := CheckBox.new()
 		cb.text = g
@@ -289,6 +390,60 @@ func _refresh() -> void:
 		cb.custom_minimum_size = Vector2(0, 44 if touch else 30)
 		cb.toggled.connect(func(on: bool) -> void: set_group(g, on))
 		_groups.add_child(cb)
+
+
+## MFA tickets: what Entra and Exchange show for this user, each item with its own action.
+func _build_security(u: Dictionary) -> void:
+	UI.label(_sec, "Sign-in log (newest first)", 13, UI.MUTED)
+	var box := PanelContainer.new()
+	box.add_theme_stylebox_override("panel", UI.box(UI.CONSOLE, 6, 10))
+	_sec.add_child(box)
+	sec_log = box
+	var lg := UI.wrap(UI.label(box, "\n".join(u.signins), 13, Color("b8f5c8")))
+	lg.add_theme_font_override("font", UI.mono())
+	if u.get("foreign_ip", "") != "":
+		_row(_sec, "Unknown IP %s in this log" % u.foreign_ip,
+			"Remove trusted location" if u.trusted != "" else "Make it a trusted location (whole organisation)", trust_ip.bind(u.trusted == ""), true)
+	UI.label(_sec, "Sessions", 13, UI.MUTED)
+	if u.sessions.is_empty():
+		UI.wrap(UI.label(_sec, "None: every session was revoked just now", 13, UI.TEXT))
+	for s in u.sessions:
+		UI.wrap(UI.label(_sec, s, 13, UI.TEXT))
+	var rv := HFlowContainer.new()
+	_sec.add_child(rv)
+	var b := _button("Sessions revoked" if u.revoked else "Revoke all sessions (sign out everywhere)", revoke_sessions, not u.revoked)
+	rv.add_child(b)
+	UI.label(_sec, "MFA methods", 13, UI.MUTED)
+	for m in u.auth:
+		_row(_sec, m.text, "Remove", remove_method.bind(m.id), true)
+	if u.auth.is_empty():
+		UI.label(_sec, "None registered", 13, Color(1, 0.75, 0.3))
+	UI.label(_sec, "Inbox rules (mailbox)", 13, UI.MUTED)
+	for r in u.rules:
+		_row(_sec, r.text, "Delete", delete_rule.bind(r.id), true)
+	if u.rules.is_empty():
+		UI.label(_sec, "No rules", 13, UI.TEXT)
+
+
+## A line of text with a button beside it (the button drops under the text on narrow screens).
+func _row(parent: Node, text: String, btn: String, fn: Callable, on: bool) -> void:
+	var row := HFlowContainer.new()
+	row.add_theme_constant_override("h_separation", 8)
+	parent.add_child(row)
+	var l := UI.wrap(UI.label(row, text, 13, UI.TEXT))
+	l.custom_minimum_size.x = 220
+	l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.add_child(_button(btn, fn, on))
+
+
+func _button(text: String, fn: Callable, on: bool) -> Button:
+	var b := Button.new()
+	b.text = text
+	b.focus_mode = Control.FOCUS_NONE
+	b.disabled = not (on and _enabled)
+	b.custom_minimum_size = Vector2(0, 44 if touch else 32)
+	b.pressed.connect(fn)
+	return b
 
 
 func _action(text: String, fn: Callable, on: bool) -> void:

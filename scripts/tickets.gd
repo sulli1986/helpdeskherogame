@@ -8,8 +8,6 @@ extends RefCounted
 ##   options, answer, explain). The top-level question is step 1; info_add is appended to the evidence
 ##   when that step opens. Each step pays out; a wrong step escalates the ticket. A step with
 ##   live = true reopens the command prompt; term_fault (if set) changes what the PC sees first.
-##   A step can have actions (Array of {text, need}) instead of options/answer: an admin-console
-##   checklist; it's right when every need = 1 action is ticked and no need = -1 one is.
 ## New ticket types: add a _make_<kind>() and list it in KINDS. Keep answers technically right;
 ## the players are often real IT people.
 
@@ -696,68 +694,106 @@ func _make_licence(c: Dictionary) -> Dictionary:
 
 
 # ---------------------------------------------------------------- MFA fatigue
-## Two steps: read the logs to work out whether MFA held, then contain it in the admin console by
-## ticking the actions the account needs (desk.gd draws "actions" as a checklist with an Apply button).
-## need: 1 = must do, 0 = fine either way, -1 = wrong (weakens security or deletes the user's own data).
+## Done in Toolbox > Accounts (acct.security): read the caller's sign-in log, sessions, MFA methods and
+## inbox rules, then contain it. Always reset the password with a change at next sign-in (each push
+## followed a correct password). If a push was approved: revoke their sessions, and remove whatever the
+## attacker set up (their own Authenticator, a hidden inbox rule, both or neither). Never touch the
+## user's own methods or rules, turn MFA off, or trust the attacker's IP; don't leave sign-in blocked.
+const PHONES := ["iPhone 15", "Pixel 8", "Galaxy S23", "iPhone 13"]
+const OWN_RULES := [
+	["Newsletters", "mail from news@ addresses moves to Newsletters"],
+	["Receipts", "mail with \"receipt\" in the subject moves to Receipts"],
+	["Team", "mail sent to the all-staff list moves to Team"],
+]
+
+
 func _make_mfa(c: Dictionary) -> Dictionary:
-	var got_in := rng.randf() < 0.5
+	var got_in := rng.randf() < 0.6
+	var foothold: String = _pick(["both", "both", "method", "rule", "none"]) if got_in else "none"
 	var start_min := rng.randi_range(5, 20)
 	var tries := rng.randi_range(9, 24)
-	var ip := "203.0.113.%d" % rng.randi_range(2, 250)
-	var upn := "%s@%s" % [c.sam, c.domain]
-	var phones := ["iPhone 15", "Pixel 8", "Galaxy S23", "iPhone 13"]
-	var own: String = _pick(phones)
-	phones.erase(own)
-	var rogue: String = _pick(phones)
-	var rule: String = _pick(["invoice", "payment", "bank"])
 	var approved := start_min + 18
-	var info := "Entra sign-ins:  %s\nFrom:            %s (hosting provider, never seen before)\nAttempts:        %d, 02:%02d-02:%02d, password correct each time\nMFA method:      Authenticator push (number matching)\n" % [upn, ip, tries, start_min, approved]
+	var ip := "203.0.113.%d" % rng.randi_range(2, 250)
+	var office := "198.51.100.%d" % rng.randi_range(2, 250)
+	var keyword: String = _pick(["invoice", "payment", "bank"])
+	var acct := _directory(c, _pick(["Office Manager", "Accounts", "Project Lead", "Director"]))
+	for u in acct.users:  # everyone gets a normal-looking security page, so the log is what tells them apart
+		var phone: String = _pick(PHONES)
+		var own_rule: Array = _pick(OWN_RULES)
+		u.methods = "Enforced (number matching)"
+		u.auth = [{"id": "app", "text": "Authenticator app on %s (added last year)" % phone}]
+		if rng.randf() < 0.4:
+			u.auth.append({"id": "sms", "text": "Phone (SMS) to the mobile ending %s (added last year)" % u.mobile})
+		u.rules = [{"id": "own", "text": "\"%s\" (created last year): %s" % own_rule}] if rng.randf() < 0.6 else []
+		u.signins = ["Yesterday 16:%02d  %s (office)  Outlook  Success" % [rng.randi_range(10, 59), office],
+			"Yesterday 08:%02d  %s (office)  Windows sign-in  Success" % [rng.randi_range(30, 59), office]]
+		u.sessions = ["%s, office, since yesterday" % u.device.get_slice(" ", 0), "Outlook and Teams on their %s, since last week" % phone]
+		u.blocked = false
+		u.revoked = false
+		u.mfa_off = false
+		u.trusted = ""
+		u.phone = phone
+	var u: Dictionary = acct.users[acct.target]
+	var own: String = u.phone
+	var rogue_phone: String = _pick(PHONES.filter(func(p: String) -> bool: return p != own))
+	if u.rules.is_empty():  # the caller always has a rule of their own to leave alone
+		u.rules = [{"id": "own", "text": "\"%s\" (created last year): %s" % _pick(OWN_RULES)}]
+	var attempts := "Today 02:%02d-02:%02d  %s (hosting provider, never seen before)  %d sign-ins: password correct, MFA push denied" % [
+		start_min, approved - 1 if got_in else approved, ip, tries - 1 if got_in else tries]
 	if got_in:
-		info += "MFA result:      denied x%d, APPROVED 02:%02d\n\nAudit 02:%02d:     User registered security info (Authenticator)\nExchange 02:%02d:  New-InboxRule\nCall notes:      a \"helpdesk\" caller read them a number to enter" % [tries - 1, approved, approved + 3, approved + 8]
+		u.signins.push_front(attempts)
+		u.signins.push_front("Today 02:%02d  %s (hosting provider, never seen before)  password correct, MFA push APPROVED (number matched)  Success" % [approved, ip])
+		u.sessions.push_front("Browser on Linux, %s (hosting provider), since today 02:%02d" % [ip, approved])
 	else:
-		info += "MFA result:      denied x%d (every prompt)\n\nAudit log:       no changes to security info or mailbox rules\nCall notes:      %s denied them all; nobody else contacted them" % [tries, c.first]
-	var console := "Sign-in:         allowed\n"
-	if got_in:
-		console += "Sessions:        signed in from %s since 02:%02d\nAuth methods:    Authenticator on %s (added last year)\n                 Authenticator on %s (added today 02:%02d)\nInbox rules:     \"Newsletters\" (last year): mail from news@ to Newsletters\n                 \".\" (today 02:%02d): mail containing \"%s\" to RSS Feeds" % [ip, approved, own, rogue, approved + 3, approved + 8, rule]
+		u.signins.push_front(attempts)
+	if foothold in ["both", "method"]:
+		u.auth.append({"id": "rogue", "text": "Authenticator app on %s (added today 02:%02d)" % [rogue_phone, approved + 3]})
+	if foothold in ["both", "rule"]:
+		u.rules.append({"id": "rogue", "text": "\".\" (created today 02:%02d): mail containing \"%s\" moves to RSS Feeds, marked as read" % [approved + 8, keyword]})
+	u.foreign_ip = ip
+	acct.security = true
+	acct.orig = acct.users.duplicate(true)
+	acct.goal = {"hold": false, "sam": c.sam, "unlock": false, "reset": true, "must_change": true, "add": [],
+		"revoke": got_in, "remove": ["rogue"] if foothold in ["both", "method"] else [],
+		"drop": ["rogue"] if foothold in ["both", "rule"] else [], "hold_why": "",
+		"held_msg": "Held it, but a stranger has the password%s: contain it now, don't wait for %s" % [" and got in" if got_in else "", c.first]}
+	acct.erase("target")
+	var reach := rng.randf()
+	var says := ""
+	if reach < 0.35:
+		says = "emailed this at 07:%02d, then went into a client meeting\n            until lunch: they can't be reached" % rng.randi_range(5, 40)
+	elif got_in:
+		says = "a man rang at 02:%02d saying he was from IT and read out a\n            number to type into the app \"to stop the prompts\", so they did" % (approved - 1)
+	elif rng.randf() < 0.5:
+		says = "a man rang saying he was from IT and tried to read them a\n            number to type into the app; they hung up"
 	else:
-		console += "Sessions:        none from %s\nAuth methods:    Authenticator on %s (added last year)\nInbox rules:     \"Newsletters\" (last year): mail from news@ to Newsletters" % [ip, own]
-	var actions: Array = [
-		{"text": "Block sign-in", "need": 0},
-		{"text": "Revoke all sessions (sign out everywhere)", "need": 1 if got_in else 0},
-		{"text": "Reset password, change required at next sign-in", "need": 1},
-	]
+		says = "they denied every prompt and nobody else contacted them"
+	var what: String = {
+		"both": "The attacker then registered their own Authenticator on another phone (%s) and made a hidden inbox rule: remove both, but leave %s's own Authenticator and their own rule alone." % [rogue_phone, c.first],
+		"method": "The attacker then registered their own Authenticator on another phone (%s) so they can pass MFA again: remove it, but leave %s's own Authenticator alone. No new inbox rule." % [rogue_phone, c.first],
+		"rule": "The attacker then made a hidden inbox rule (\".\" moving \"%s\" mail to RSS Feeds) to hide replies: delete it, but leave %s's own rule. No new MFA method." % [keyword, c.first],
+		"none": "Nothing new on the account yet (no new MFA method or inbox rule), so there's nothing of theirs to remove: throwing them out is the fix.",
+	}[foothold]
+	var explain := ""
 	if got_in:
-		actions.append({"text": "Remove the Authenticator on %s (added today)" % rogue, "need": 1})
-		actions.append({"text": "Delete inbox rule \".\" (\"%s\" mail to RSS Feeds)" % rule, "need": 1})
-	actions.append({"text": "Delete inbox rule \"Newsletters\"", "need": -1})
-	actions.append({"text": "Turn off MFA for this user until it settles down", "need": -1})
-	actions.append({"text": "Add %s as a trusted location" % ip, "need": -1})
+		explain = "The 02:%02d sign-in was approved, so the attacker got in. Reset the password with a change at next sign-in, then revoke all sessions: a reset doesn't reliably sign out sessions that are already open, and tokens already issued keep working until they expire. %s Then check what was sent from the mailbox." % [approved, what]
+	else:
+		explain = "Every push was denied and nothing changed on the account, but each one came after a correct password: the attacker knows it. Reset it with a change at next sign-in. Revoking sessions is extra caution, not required. Phishing-resistant MFA or Conditional Access would stop these prompts."
+	explain += " Blocking sign-in while you work is fine, but unblock it before you close the ticket. Never turn MFA off or trust the attacker's IP."
 	return {
 		"priority": 1,
 		"subject": "Authenticator prompts I didn't start",
-		"body": "%s: \"My phone kept buzzing with sign-in requests from about 2am. I wasn't logging in. What's going on?\"" % c.first,
-		"info_title": "Sign-in + audit logs",
-		"info": info,
-		"question": "What's happened?",
+		"body": "%s (%s): \"My phone kept buzzing with sign-in requests from about 2am. I wasn't logging in. What's going on?\"" % [c.user, u.title],
+		"info_title": "Call notes",
+		"info": "Caller:     %s\nSays:       %s\nPolicy:     a correct password from a stranger means it's leaked.\n            Check their sign-in log in Accounts (T) and contain it there" % [c.user, says],
+		"acct": acct,
+		"question": "Contain it on the Accounts tab (T), then close it",
 		"options": [
-			"Someone has the password, but MFA held and nobody got in",
-			"The attacker got in: a push was approved and they've set up a foothold",
-			"Nothing to worry about: an Authenticator app glitch",
-			"The user's phone has malware that's sending the prompts",
+			"Done: I've secured the account in Accounts",
+			"Hold: change nothing until %s can confirm what they did" % c.first,
 		],
-		"answer": 1 if got_in else 0,
-		"explain": ("The 02:%02d approval let them in. Then they registered their own Authenticator and made an inbox rule, so they keep access and hide replies. Never enter a number someone gives you. Next: contain it in the admin console." % approved if got_in
-			else "Each push came after a correct password, so the password is compromised even though MFA held. The pushes came from an attacker's sign-in, not the phone. Next: lock it down in the admin console."),
-		"step_name": "Diagnose",
-		"steps": [{
-			"name": "Contain",
-			"info_add": "\n\n--- Admin console: %s ---\n%s\n" % [upn, console],
-			"question": "Tick everything this account needs, then Apply",
-			"actions": actions,
-			"explain": ("Revoke the sessions and reset the password to throw them out, remove their Authenticator so they can't come back in, and delete their rule so replies stop being hidden. Blocking sign-in while you work is fine. Leave the user's own Newsletters rule, and never weaken MFA or trust the attacker's IP. Then check what was sent from the mailbox."
-				if got_in else
-				"Reset the password: the attacker knows it. MFA held and nothing was changed, so there's nothing of theirs to remove; revoking sessions or blocking sign-in is extra caution, not required. Leave the user's own Newsletters rule, and never weaken MFA or trust the attacker's IP. Conditional Access or phishing-resistant MFA would stop these prompts."),
-		}],
+		"answer": 0,
+		"explain": explain,
 	}
 
 

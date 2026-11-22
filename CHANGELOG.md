@@ -1,5 +1,10 @@
 # Changelog
 
+## Day 15 — 2026-11-23
+- Stop the 2am attacker yourself: MFA fatigue tickets are now worked in Accounts. Open the caller's sign-in log, sessions, MFA methods and inbox rules
+- Did a push get approved? Then revoke every session and remove what the attacker left: their own Authenticator, a hidden inbox rule, both or neither. Always reset the password and require a change at next sign-in
+- Leave the user's own phone and rules alone, never turn MFA off or trust the attacker's IP, and unblock sign-in before you close it. The old tick-box admin console is gone
+
 ## Day 14 — 2026-11-22
 - Fix the outage yourself: once you've diagnosed "The internet is down!", the fix step happens on the Network Map, now with the client's ISP, modem, firewall and domain controller
 - Find out why: the ISP's status page, the modem's lights, the firewall's links, rules and log, and the domain controller's DNS forwarders, DHCP and event log. Then fix the cause: new forwarders, a narrow firewall rule, the modem's power, the DHCP service or its authorisation
