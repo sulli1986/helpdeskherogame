@@ -14,6 +14,9 @@ extends VBoxContainer
 ##   trusted (an IP made a trusted location), foreign_ip (optional: the attacker's IP in their log).
 ##   goal.revoke: sessions must be revoked; goal.remove / goal.drop: the auth / rule ids that are the
 ##   attacker's. Removing any other method or rule is wrong, and sign-in must not be left blocked.
+## acct.bitlocker (BitLocker tickets): each user also has devices: [{name, about, keys: [{id, drive, when,
+##   pwd}]}] and read: [key id] (keys read out to the caller). acct.screen = the first 8 characters of
+##   the key ID on the caller's recovery screen; goal.key = the only key that may be read out.
 
 signal changed
 
@@ -32,6 +35,8 @@ var _lic_head: Label
 var _lic: VBoxContainer
 var _sec: VBoxContainer   # MFA tickets: sign-in log, sessions, MFA methods, inbox rules
 var sec_log: Control      # the sign-in log box (the demo scrolls to it)
+var dev_head: Control     # BitLocker tickets: the Devices heading (the demo scrolls to it)
+var shown := {}           # BitLocker key ids whose recovery password is on screen
 
 
 func _init() -> void:
@@ -65,6 +70,8 @@ func _init() -> void:
 
 
 func open(a: Dictionary, client: String, enabled := true) -> void:
+	if not is_same(a, acct):
+		shown = {}
 	acct = a
 	_enabled = enabled
 	_title.text = "Toolbox  ›  Accounts  ·  %s" % client
@@ -178,6 +185,20 @@ func trust_ip(on := true) -> void:
 		_changed()
 
 
+## BitLocker: reveal a key's recovery password (Entra logs who looked, but nothing is disclosed yet).
+func show_key(id: String) -> void:
+	shown[id] = true
+	_refresh()
+
+
+## Read a shown recovery password out to the caller. It counts once said, right or wrong.
+func read_key(id: String) -> void:
+	var u := _user(selected)
+	if _enabled and not u.is_empty() and shown.has(id) and not id in u.read:
+		u.read.append(id)
+		_changed()
+
+
 ## Unassigned licences of this kind the company has paid for.
 static func spare(a: Dictionary, sku: String) -> int:
 	for s in a.get("skus", []):
@@ -235,14 +256,31 @@ static func check(a: Dictionary, held: bool) -> Array:
 		if u.get("blocked", false):
 			out.append("Left sign-in blocked, so %s can't work: unblock it once it's contained" % u.name.get_slice(" ", 0))
 	var t := _user_in(a.users, goal.sam)
+	var read_any := false
+	for x in a.users:
+		for id in x.get("read", []):
+			read_any = true
+			if goal.hold:
+				continue
+			var k := _key_in(x, id)
+			if x.sam != goal.sam:
+				out.append("Read out %s's recovery key: that's someone else's laptop" % x.name)
+			elif id != goal.key:
+				out.append("Read out the key %s (%s, %s): its ID doesn't start %s like the one on their screen, so it can't unlock it and is now exposed" % [
+					id.substr(0, 8), k.get("dev", "?"), k.get("drive", "?"), a.screen])
 	if goal.hold:
+		if read_any:
+			out.push_front("Read out a recovery key: %s" % goal.hold_why)
 		if touched:
 			out.push_front("Changed %s's account: %s" % [t.name, goal.hold_why])
 		elif not held:
 			out.push_front("Nothing to mark done: %s" % goal.hold_why)
 		return out
 	if held:
-		out.push_front(goal.get("held_msg", "Held it, but this one was fine to do"))
+		if goal.get("key", "") != "" and goal.key in t.get("read", []):
+			out.push_front("You'd already read them the right key and they're back in: close it as Done")
+		else:
+			out.push_front(goal.get("held_msg", "Held it, but this one was fine to do"))
 		return out
 	if goal.unlock and t.locked:
 		out.append("%s is still locked out" % t.name)
@@ -261,6 +299,8 @@ static func check(a: Dictionary, held: bool) -> Array:
 	for r in t.get("rules", []):
 		if r.id in goal.get("drop", []):
 			out.append("The attacker's inbox rule %s is still hiding mail" % r.text.get_slice(" (", 0))
+	if goal.get("key", "") != "" and not goal.key in t.get("read", []):
+		out.append("Didn't read them the key with ID %s, so they still can't get into Windows" % a.screen)
 	if goal.has("licence") and t.licence != goal.licence:
 		out.append("%s has %s, but needs %s" % [t.name, "no licence" if t.licence == "None" else t.licence.trim_prefix("Microsoft 365 "), goal.licence.trim_prefix("Microsoft 365 ")])
 	return out
@@ -304,6 +344,17 @@ static func _has_id(items: Array, id: String) -> bool:
 	return false
 
 
+## The key with this id on one of the user's devices, plus "dev" (the device's name).
+static func _key_in(u: Dictionary, id: String) -> Dictionary:
+	for d in u.get("devices", []):
+		for k in d.keys:
+			if k.id == id:
+				var out: Dictionary = k.duplicate()
+				out.dev = d.name
+				return out
+	return {}
+
+
 static func _user_in(users: Array, sam: String) -> Dictionary:
 	for u in users:
 		if u.sam == sam:
@@ -333,6 +384,7 @@ func _refresh() -> void:
 	for c in _sec.get_children():
 		c.queue_free()
 	sec_log = null
+	dev_head = null
 	_lic_head.visible = acct.has("skus")
 	_lic.visible = acct.has("skus")
 	if acct.is_empty():
@@ -381,6 +433,8 @@ func _refresh() -> void:
 		_action("Unblock sign-in" if u.blocked else "Block sign-in", block_signin.bind(not u.blocked), true)
 		_action("Turn MFA back on" if u.mfa_off else "Turn off MFA for this user", set_mfa_off.bind(not u.mfa_off), true)
 		_build_security(u)
+	if acct.get("bitlocker", false):
+		_build_devices(u)
 	for g in acct.groups:
 		var cb := CheckBox.new()
 		cb.text = g
@@ -423,6 +477,34 @@ func _build_security(u: Dictionary) -> void:
 		_row(_sec, r.text, "Delete", delete_rule.bind(r.id), true)
 	if u.rules.is_empty():
 		UI.label(_sec, "No rules", 13, UI.TEXT)
+
+
+## BitLocker tickets: the user's devices in Entra, each with its backed-up recovery keys.
+func _build_devices(u: Dictionary) -> void:
+	dev_head = UI.label(_sec, "Devices and BitLocker keys", 13, UI.MUTED)
+	for d in u.devices:
+		UI.wrap(UI.label(_sec, "%s  ·  %s" % [d.name, d.about], 14, UI.TEXT))
+		if d.keys.is_empty():
+			UI.label(_sec, "    No BitLocker keys backed up for this device", 13, Color(1, 0.75, 0.3))
+		for k in d.keys:
+			var box := PanelContainer.new()
+			box.add_theme_stylebox_override("panel", UI.box(UI.CONSOLE, 6, 8))
+			_sec.add_child(box)
+			var lines: Array = ["Key ID:  %s" % k.id, "Drive:   %s, %s" % [k.drive, k.when]]
+			if shown.has(k.id):
+				lines.append("Recovery key:\n  %s" % k.pwd)
+			var l := UI.wrap(UI.label(box, "\n".join(lines), 13, Color("b8f5c8")))
+			l.add_theme_font_override("font", UI.mono())
+			var row := HFlowContainer.new()
+			row.add_theme_constant_override("h_separation", 6)
+			_sec.add_child(row)
+			if not shown.has(k.id):
+				row.add_child(_button("Show recovery key", show_key.bind(k.id), true))
+			elif k.id in u.read:
+				var said := "They typed it in: Windows is starting." if k.id.begins_with(acct.screen) else "They typed it in: \"That key is wrong.\""
+				UI.wrap(UI.label(row, "Read out.  " + said, 13, UI.GOOD if k.id.begins_with(acct.screen) else Color(1, 0.75, 0.3)))
+			else:
+				row.add_child(_button("Read it out to the caller", read_key.bind(k.id), true))
 
 
 ## A line of text with a button beside it (the button drops under the text on narrow screens).

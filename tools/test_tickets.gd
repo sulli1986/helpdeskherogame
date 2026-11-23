@@ -87,6 +87,8 @@ func _check(kind: String, t: Dictionary) -> void:
 		_check_acct(kind, t)
 		for u in t.acct.users:
 			text += " " + " ".join([u.name, u.title, u.upn, u.device, u.licence, " ".join(u.groups)]).to_lower()
+			for d in u.get("devices", []):
+				text += " " + " ".join([d.name, d.about] + d.keys.map(func(k): return k.drive + " " + k.when)).to_lower()
 			if t.acct.get("security", false):
 				text += " " + " ".join(u.signins + u.sessions + u.auth.map(func(m): return m.text) + u.rules.map(func(r): return r.text)).to_lower()
 	if t.has("rc"):
@@ -297,6 +299,8 @@ func _check_acct(kind: String, t: Dictionary) -> void:
 					u.sessions = []
 				u.auth = u.get("auth", []).filter(func(m): return not m.id in a.goal.get("remove", []))
 				u.rules = u.get("rules", []).filter(func(r): return not r.id in a.goal.get("drop", []))
+				if a.goal.get("key", "") != "":
+					u.read = [a.goal.key]
 		for u in b.users:  # licence tickets: free the leaver's first, then assign
 			if u.sam == a.goal.get("free", ""):
 				u.licence = "None"
@@ -309,6 +313,8 @@ func _check_acct(kind: String, t: Dictionary) -> void:
 			_fail(kind, "solved directory doesn't pass: %s" % str(A.check(b, false)))
 	if a.get("security", false):
 		_check_security(kind, a)
+	if a.get("bitlocker", false):
+		_check_bitlocker(kind, t)
 	if a.goal.has("licence"):
 		_check_licence(kind, a)
 	# Touching a colleague is always wrong.
@@ -319,6 +325,48 @@ func _check_acct(kind: String, t: Dictionary) -> void:
 			break
 	if A.check(c, a.goal.hold).is_empty():
 		_fail(kind, "changing another user wasn't caught")
+
+
+## BitLocker tickets: exactly one key (the caller's) may start with the ID on their screen, it must exist
+## only when the ticket is doable, and reading out any other key (or any key on a hold) must be caught.
+func _check_bitlocker(kind: String, t: Dictionary) -> void:
+	var A = load("res://scripts/accounts.gd")
+	var a: Dictionary = t.acct
+	var goal: Dictionary = a.goal
+	if a.screen.length() != 8 or not a.screen in t.info:
+		_fail(kind, "bitlocker: the screen's key ID isn't in the call notes")
+	var matches: Array = []
+	for u in a.users:
+		for d in u.devices:
+			for k in d.keys:
+				if k.id.begins_with(a.screen):
+					matches.append(k.id)
+				if k.pwd.split("-").size() != 8:
+					_fail(kind, "bitlocker: recovery password isn't 8 blocks")
+				for b in k.pwd.split("-"):
+					if b.length() != 6 or int(b) % 11 != 0:
+						_fail(kind, "bitlocker: block %s isn't a valid recovery block" % b)
+	if goal.key == "":
+		if not goal.hold:
+			_fail(kind, "bitlocker: no key to read but not a hold")
+		if not matches.is_empty():
+			_fail(kind, "bitlocker: a key matches the screen on a no-key ticket")
+	elif matches != [goal.key]:
+		_fail(kind, "bitlocker: %d keys match the screen (want just the caller's)" % matches.size())
+	for u in a.users:
+		for d in u.devices:
+			for k in d.keys:
+				if k.id == goal.key and goal.hold == false:
+					continue
+				var w: Dictionary = a.duplicate(true)
+				for x in w.users:
+					if x.sam == goal.sam and goal.key != "" and not goal.hold:
+						x.read = [goal.key]
+				for x in w.users:
+					if x.sam == u.sam:
+						x.read.append(k.id)
+				if A.check(w, goal.hold).is_empty():
+					_fail(kind, "bitlocker: reading out key %s wasn't caught" % k.id.substr(0, 8))
 
 
 ## Licence tickets: the stock must match the case (spare / leaver / buy), and every other licence for

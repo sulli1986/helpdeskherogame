@@ -11,7 +11,7 @@ extends RefCounted
 ## New ticket types: add a _make_<kind>() and list it in KINDS. Keep answers technically right;
 ## the players are often real IT people.
 
-const KINDS := ["phish", "lockout", "share", "printer", "network", "licence", "mfa", "driver"]
+const KINDS := ["phish", "lockout", "share", "printer", "network", "licence", "mfa", "driver", "bitlocker"]
 
 const CLIENTS := [
 	["Greenfield Wines", "greenfieldwines.com"],
@@ -795,6 +795,115 @@ func _make_mfa(c: Dictionary) -> Dictionary:
 		"answer": 0,
 		"explain": explain,
 	}
+
+
+# ---------------------------------------------------------------- BitLocker recovery
+## Done in Toolbox > Accounts: check the callback number against the mobile on file, then open the
+## caller's devices and read out only the recovery key whose ID matches the one on their screen.
+## Hold (read out nothing) when the caller isn't verified, or when Entra has no key with that ID:
+## no other key can unlock that drive.
+func _make_bitlocker(c: Dictionary) -> Dictionary:
+	var genuine := rng.randf() < 0.8
+	var has_key := rng.randf() < 0.8
+	var exec := rng.randf() < 0.25
+	var title: String = "Director" if exec else _pick(["Office Manager", "Accounts", "Project Lead", "Designer"])
+	var acct := _directory(c, title)
+	var prefix: String = c.domain.substr(0, 3).to_upper()
+	var used: Array = []
+	for u in acct.users:  # everyone has a laptop with its key backed up, so the right person matters
+		u.devices = [{"name": u.device.get_slice(" ", 0), "about": "Windows 11 laptop  ·  Entra joined  ·  in use",
+			"keys": [_bl_key("Operating system drive", "%d days ago" % rng.randi_range(40, 400), used)]}]
+		u.read = []
+	var u: Dictionary = acct.users[acct.target]
+	var lap: Dictionary = u.devices[0]
+	var screen := ""
+	var key_id := ""
+	var extra := ""        # the explanation's note on keys that look right but aren't
+	var stale := false
+	if has_key:
+		var k := _bl_key("Operating system drive", "%d days ago" % rng.randi_range(20, 200), used)
+		lap.keys = [k]
+		key_id = k.id
+		screen = k.id.substr(0, 8)
+		if rng.randf() < 0.4:  # an older key for the same drive, since rotated
+			lap.keys.append(_bl_key("Operating system drive", "%d days ago" % rng.randi_range(300, 600), used))
+			extra = "The older key for the same drive has since been replaced, with a different ID: it no longer unlocks it. "
+	else:
+		screen = _hex(8)
+		while screen.substr(0, 4) in used:
+			screen = _hex(8)
+		used.append(screen.substr(0, 4))
+		stale = rng.randf() < 0.5
+		lap.keys = [_bl_key("Operating system drive", "%d days ago" % rng.randi_range(300, 600), used)] if stale else []
+	if rng.randf() < 0.5:  # a second internal drive has its own key
+		lap.keys.append(_bl_key("Fixed data drive", "%d days ago" % rng.randi_range(20, 400), used))
+		extra += "The data drive's key is for the second drive, not the one Windows boots from. "
+	if rng.randf() < 0.6:  # their last laptop is still in the list
+		var old := _bl_key("Operating system drive", "%d days ago" % rng.randi_range(500, 900), used)
+		if rng.randf() < 0.5:  # same first four characters: read the whole eight
+			old.id = screen.substr(0, 4) + old.id.substr(4)
+			while old.id.begins_with(screen):
+				old.id = screen.substr(0, 4) + _hex(4) + old.id.substr(8)
+		u.devices.append({"name": "%s-PC%02d" % [prefix, rng.randi_range(30, 49)], "about": "Windows 11 laptop  ·  Entra joined  ·  replaced, last sign-in months ago", "keys": [old]})
+		extra += "%s is their old laptop. " % u.devices[1].name
+	var on_file: String = u.mobile
+	var rang := on_file
+	if not genuine:
+		rang = "%04d" % ((int(on_file) + rng.randi_range(11, 8000)) % 10000)
+	acct.bitlocker = true
+	acct.screen = screen
+	acct.orig = acct.users.duplicate(true)
+	var why_nokey := "no key in Entra has the ID on their screen (%s), so no key you have can unlock that drive" % screen
+	acct.goal = {"hold": not (genuine and has_key), "sam": c.sam, "unlock": false, "reset": false, "must_change": false, "add": [],
+		"key": key_id,
+		"hold_why": ("the callback number isn't the one on file, so the caller was never verified. A recovery key unlocks the whole drive for whoever has the laptop"
+			if not genuine else why_nokey),
+		"held_msg": "Held it, but the caller is verified and the key with ID %s is in Entra: read it out so they can work" % screen}
+	acct.erase("target")
+	var explain := ""
+	if not genuine:
+		explain = "The mobile on file ends %s, not %s. Calling back a number the caller gives you proves nothing, and a recovery key unlocks the whole drive for whoever is holding the laptop: read out nothing, call back on the number on file and flag it to security." % [on_file, rang]
+	elif has_key:
+		explain = "The callback number is the mobile on file, so the caller is verified. Their screen's key ID starts %s: only the key on %s with that ID unlocks the drive. %sReading out a key that doesn't match exposes it for nothing. The key read over the phone should be rotated once they're in (Intune can do this automatically after a key is used)." % [screen, lap.name, extra]
+	else:
+		explain = "The caller is verified, but %s has %s. Without the key whose ID matches %s, no key can unlock that drive: read out nothing and hold. First try undoing what triggered it (unplug the new dock, put back any changed BIOS setting) in case the TPM unlocks it again, and check anywhere else the key may have been saved; if none of that works, the laptop has to be wiped and rebuilt, and anything not synced to OneDrive is lost." % [
+			lap.name, "only an old key that has since been replaced, with a different ID" if stale else "no BitLocker key backed up to Entra at all", screen]
+	var cause: String = _pick(["after an update last night", "after a BIOS update last night", "since I plugged it into the new docking station"])
+	return {
+		"priority": 1 if exec else 2,
+		"subject": "Laptop asking for a BitLocker recovery key",
+		"body": "%s (%s) is on the phone: \"My laptop's on a blue screen asking for a BitLocker recovery key %s. I can't get into Windows at all!\"" % [c.user, title, cause],
+		"info_title": "Call notes",
+		"info": "Caller:     says they're %s (%s)\nCallback:   we rang the mobile ending %s that the caller gave us;\n            they answered and confirmed the request\nScreen:     BitLocker recovery, key ID starting %s\nPolicy:     only read out a recovery key once the caller is verified\n            (callback number = the mobile on file, Accounts tab)" % [c.user, title, rang, screen],
+		"acct": acct,
+		"question": "Find their key on the Accounts tab (T) and read it out, or hold",
+		"options": [
+			"Done: I read them the key that matches their screen",
+			"Hold: read out nothing. Not verified, or no key matches",
+		],
+		"answer": 1 if acct.goal.hold else 0,
+		"explain": explain,
+	}
+
+
+## A BitLocker recovery key as Entra shows it: a key ID (a GUID) and a 48-digit recovery password in
+## eight blocks of six digits, each block a multiple of 11 (as real recovery passwords are).
+func _bl_key(drive: String, when: String, used: Array) -> Dictionary:
+	var id := ""
+	while id == "" or id.substr(0, 4) in used:
+		id = "%s-%s-%s-%s-%s" % [_hex(8), _hex(4), _hex(4), _hex(4), _hex(12)]
+	used.append(id.substr(0, 4))
+	var blocks: Array = []
+	for i in 8:
+		blocks.append("%06d" % (11 * rng.randi_range(0, 65535)))
+	return {"id": id, "drive": drive, "when": "backed up %s" % when, "pwd": "-".join(blocks)}
+
+
+func _hex(n: int) -> String:
+	var s := ""
+	for i in n:
+		s += "0123456789ABCDEF"[rng.randi() % 16]
+	return s
 
 
 # ---------------------------------------------------------------- scanner driver

@@ -1,5 +1,10 @@
 # Changelog
 
+## Day 16 — 2026-11-24
+- Locked out by BitLocker: a new ticket where the caller's laptop is stuck on the blue recovery screen. Find their key in Accounts and read it out
+- First check the callback number against the mobile on file. Then open their devices and match the key ID on their screen: not their old laptop's, not the data drive's, not an older key for the same drive
+- Unverified caller, or no key in Entra with that ID? Read out nothing and hold. Every key you read out counts, so a wrong one escalates the ticket
+
 ## Day 15 — 2026-11-23
 - Stop the 2am attacker yourself: MFA fatigue tickets are now worked in Accounts. Open the caller's sign-in log, sessions, MFA methods and inbox rules
 - Did a push get approved? Then revoke every session and remove what the attacker left: their own Authenticator, a hidden inbox rule, both or neither. Always reset the password and require a change at next sign-in

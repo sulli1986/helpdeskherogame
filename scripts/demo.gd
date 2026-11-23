@@ -9,7 +9,7 @@ const END_AT := 27.0
 const READ_TIME := 2.4      # seconds "reading" a ticket before answering
 const RESULT_TIME := 1.8    # seconds showing the explanation
 const WRONG_AT := 17.0      # one deliberate wrong call after the feature (shows the penalty)
-const SEED := 3             # Day 15: an MFA attack that got in, leaving an Authenticator and a hidden inbox rule
+const SEED := 8             # Day 16: a verified caller, with an old laptop and a data-drive key to skip past
 
 var main: Node
 var desk: Node
@@ -53,7 +53,7 @@ func _start_shift() -> void:
 	main.summary.visible = false
 	desk.spawn_scale = 4.0
 	desk.clock_scale = 8.0   # the clock visibly moves, but the shift doesn't end in the clip
-	desk.first_kind = "mfa"  # Day 15: open on the MFA fatigue ticket, now contained in Accounts
+	desk.first_kind = "bitlocker"  # Day 16: open on the new BitLocker recovery ticket, worked in Accounts
 	desk.start(SEED)
 	_auto = true
 	_step_t = 2.8  # the hook line plays over the first ticket
@@ -140,6 +140,11 @@ func _plan_accounts(t: Dictionary) -> void:
 	]
 	if t.acct.get("security", false):  # Day 15: read the sign-in log, then contain it
 		_plan.append([func() -> void: _scroll_to(acc.sec_log if acc.sec_log else acc), 3.2])
+	if t.acct.get("bitlocker", false):  # Day 16: match the key ID on their screen, show it, read it out
+		_plan.append([func() -> void: _scroll_to(acc.dev_head if acc.dev_head else acc), 3.4])
+		if not goal.hold:
+			_plan.append([acc.show_key.bind(goal.key), 1.8])
+			_plan.append([acc.read_key.bind(goal.key), 2.2])
 	if not goal.hold:
 		if goal.unlock:
 			_plan.append([acc.unlock, 0.9])
