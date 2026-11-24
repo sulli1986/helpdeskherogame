@@ -9,7 +9,7 @@ const END_AT := 27.0
 const READ_TIME := 2.4      # seconds "reading" a ticket before answering
 const RESULT_TIME := 1.8    # seconds showing the explanation
 const WRONG_AT := 17.0      # one deliberate wrong call after the feature (shows the penalty)
-const SEED := 8             # Day 16: a verified caller, with an old laptop and a data-drive key to skip past
+const SEED := 11            # Day 17: a verified director locked out (P1): the senior's hints walk it through
 
 var main: Node
 var desk: Node
@@ -22,6 +22,7 @@ var _wrong_done := false
 var _typing: Array = []     # commands still to type into a network ticket's terminal
 var _typed := ""
 var _plan: Array = []       # Day 9: Toolbox > Accounts moves still to make, each [callable, pause]
+var _senior := true         # Day 17: ask the senior for every hint on the first ticket before working it
 
 
 func start(m: Node) -> void:
@@ -53,7 +54,7 @@ func _start_shift() -> void:
 	main.summary.visible = false
 	desk.spawn_scale = 4.0
 	desk.clock_scale = 8.0   # the clock visibly moves, but the shift doesn't end in the clip
-	desk.first_kind = "bitlocker"  # Day 16: open on the new BitLocker recovery ticket, worked in Accounts
+	desk.first_kind = "lockout"  # Day 17: Ask a Senior, shown on a lockout worked in Accounts
 	desk.start(SEED)
 	_auto = true
 	_step_t = 2.8  # the hook line plays over the first ticket
@@ -103,6 +104,12 @@ func _process(delta: float) -> void:
 	elif desk.current.has("acct") and not desk.current.get("demo_planned", false):
 		desk.current.demo_planned = true
 		_plan_accounts(desk.current)
+		if _senior:  # Day 17: three hints first, each shown on the ticket
+			_senior = false
+			var asks: Array = []
+			for i in desk.current.get("hints", []).size():
+				asks.append([_ask_senior, 2.7])
+			_plan = asks + _plan
 		_step_t = 0.2
 	elif desk.current.has("rc") and not desk.current.get("demo_planned", false):
 		desk.current.demo_planned = true
@@ -280,6 +287,15 @@ func _plan_office(t: Dictionary) -> void:
 		_plan.append([nm.act.bind(f, dev), 0.1])
 		_plan.append([_scroll_to_end if key != "dns1" else func() -> void: _scroll_to(nm.focus), 1.6])
 	_plan.append([desk.answer.bind(1 if goal.hold else 0), RESULT_TIME + 1.0])
+
+
+## Day 17: reveal the next hint and scroll the ticket so the senior's notes are on screen.
+func _ask_senior() -> void:
+	desk.ask_senior()
+	await get_tree().process_frame
+	await get_tree().process_frame
+	var sc: ScrollContainer = desk._dscroll
+	sc.scroll_vertical = int(desk._senior_box.get_global_rect().end.y - sc.get_global_rect().end.y + sc.scroll_vertical + 12.0)
 
 
 func _scroll_to_end() -> void:

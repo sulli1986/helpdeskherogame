@@ -3,6 +3,8 @@ extends RefCounted
 ##   kind, priority (1 = P1 .. 4 = P4), client, user, subject, body,
 ##   info_title, info (evidence shown in a monospace box), question,
 ##   options (Array[String]), answer (index into options), explain (shown after answering)
+##   hints: three "Ask a Senior" nudges, each more specific (where to look, what the evidence means,
+##   what to do); every step has its own. Each one the player reveals costs part of that step's pay.
 ##   Optional: term + prompt (a simulated command prompt the player types into; see terminal.gd)
 ##   Optional: steps (Array of later steps on the same ticket, each with name, info_add, question,
 ##   options, answer, explain). The top-level question is step 1; info_add is appended to the evidence
@@ -82,6 +84,8 @@ func _make_phish(c: Dictionary) -> Dictionary:
 		"recips": [{"name": c.user, "folder": "Inbox"}]}
 	var goal := {"id": 1, "kind": kind, "release": false, "hold_why": "", "blocks": no}
 	var explain := ""
+	var hint2 := ""   # Ask a Senior: what the evidence means, then what to do
+	var hint3 := ""
 	var v := rng.randi() % 4
 	if kind == "legit":
 		var legit_bad := "Blocked a legitimate sender. Nothing about this email needed blocking"
@@ -93,6 +97,8 @@ func _make_phish(c: Dictionary) -> Dictionary:
 				"note": "Quarantined (verdict: phish). %s is in the vendor list; the amount matches PO %d" % [sup[0], rng.randi_range(1000, 4999)]}, true)
 			m.recips[0].folder = "Quarantine"
 			goal.release = true
+			hint2 = "Look past the quarantine verdict: SPF, DKIM and DMARC all pass for post.xero.com (an invoicing service suppliers send through), the link goes to xero.com, and the note says it matches a real PO."
+			hint3 = "It's legitimate: Release from quarantine and block nothing, then press Done on the Ticket tab."
 			explain = "Legit, and the filter got it wrong. SPF, DKIM and DMARC all pass for post.xero.com (Xero sends invoices for its customers), the link goes to xero.com, and it matches a real PO. Release it, block nothing, and you can report the false positive to Microsoft."
 		else:
 			var grp: String = "Finance" if v == 1 else "Projects"
@@ -100,12 +106,16 @@ func _make_phish(c: Dictionary) -> Dictionary:
 				"subject": "Action required: review access to the %s group" % grp, "auth": "SPF=pass  DKIM=pass (microsoft.com)  DMARC=pass",
 				"links": "myaccess.microsoft.com/…", "url_host": "myaccess.microsoft.com",
 				"note": "Your team started this quarter's Entra access review of the %s group this morning (ticket in PSA); %s is a reviewer" % [grp, c.first]}, true)
+			hint2 = "Auth passes for microsoft.com, the link goes to Microsoft's own My Access portal, and the note says your team started this review this morning."
+			hint3 = "It's legitimate: don't delete, release or block anything. Press Done on the Ticket tab and tell %s it's safe." % c.first
 			explain = "Legit. Entra access reviews email reviewers from MSSecurity-noreply@microsoft.com \"on behalf of\" the organisation, auth passes for microsoft.com, the link is Microsoft's own My Access portal, and it matches the review your team started this morning. Nothing to delete or block: tell %s it's safe to do the review." % c.first
 	elif kind == "hold":
 		m.merge({"from_name": "%s Accounts" % sup[0], "from_addr": "accounts@%s" % sup[1], "reply_to": "accounts@%s" % sup[1],
 			"subject": "Change of bank details for future payments", "auth": "SPF=pass  DKIM=pass (%s)  DMARC=pass" % sup[1],
 			"attach": "Bank_details_letter.pdf (scanned clean)", "note": "%s is in the vendor list; a payment run to them is due this week" % sup[0]}, true)
 		goal.hold_why = "a change of bank details must be confirmed by phoning %s on a number you already have (not one in the email) before anything is paid. Passing SPF, DKIM and DMARC only proves it came from their mail system, and supplier mailboxes get hacked" % sup[0]
+		hint2 = "It passes SPF, DKIM and DMARC for %s's real domain, but it changes bank details. Passing auth only proves which mail system sent it, and supplier mailboxes get hacked." % sup[0]
+		hint3 = "Change nothing in the Mail Console and press Hold, so accounts phone %s on a number already on file." % sup[0]
 		explain = "Can't be settled from the headers. It really came from %s's mail system, but that's exactly what a hacked supplier mailbox looks like. Don't delete, release or block anything: hold it, and have accounts phone %s on the number already on file before changing any payment details." % [sup[0], sup[0]]
 	else:
 		var copies: int = rng.randi_range(1, 3)
@@ -123,6 +133,8 @@ func _make_phish(c: Dictionary) -> Dictionary:
 					"links": "rnicrosoft-secure.com/owa/login", "url_host": "rnicrosoft-secure.com"}, true)
 				goal.blocks = {"addr": [0, ""], "url": [0, ""],
 					"domain": [1, "rnicrosoft-secure.com wasn't blocked: it's the attacker's own lookalike domain, so block all of it, not just one address"]}
+				hint2 = "Ignore the display name and read the sender's domain letter by letter. Does it really say microsoft?"
+				hint3 = "\"rnicrosoft\" is r-n, not m: the attacker owns that domain. Delete it from every mailbox and block the domain rnicrosoft-secure.com, then Done."
 				explain = "Phish. \"rnicrosoft\" is r-n, not m. SPF passing only proves the lookalike domain sent it. Delete every copy and block the whole domain: the attacker owns it."
 			1:
 				var boss_last: String = _pick(LAST.filter(func(l: String) -> bool: return l != c.last))
@@ -132,6 +144,8 @@ func _make_phish(c: Dictionary) -> Dictionary:
 				goal.blocks = {"url": [0, ""],
 					"addr": [1, "%s wasn't blocked: block the scammer's address" % addr],
 					"domain": [-1, "Blocked all of gmail.com: that stops every customer and supplier who uses Gmail. Block the scammer's address instead"]}
+				hint2 = "The display name says it's the CEO. Look at the address it really came from, and at what it asks for."
+				hint3 = "A Gmail address posing as the boss: delete it from every mailbox and block that one address (%s), never all of gmail.com. Then Done." % addr
 				explain = "Phish (CEO fraud). The display name is the boss, but the address is a Gmail account, and it's urgent gift cards. Classic business email compromise. Delete every copy and block that one address, never gmail.com."
 			2:
 				var typo := d.replace(".com", "-accounts.co")  # lookalike of their own domain
@@ -140,6 +154,8 @@ func _make_phish(c: Dictionary) -> Dictionary:
 					"attach": "New_Bank_Details.pdf.html"}, true)
 				goal.blocks = {"addr": [0, ""], "url": [0, ""],
 					"domain": [1, "%s wasn't blocked: it's a lookalike of the client's own domain that the attacker owns, so block all of it" % typo]}
+				hint2 = "Compare the sender's domain with the client's own (%s), then read the attachment's full name." % d
+				hint3 = "%s is a lookalike the attacker owns: delete it from every mailbox and block that domain, then Done." % typo
 				explain = "Phish. A lookalike of their own domain, no DKIM or DMARC, SPF soft-fails, a bank-detail change by email, and a .pdf.html attachment (a web page posing as a PDF). Delete every copy and block the lookalike domain."
 			_:
 				var first: String = _pick(FIRST)
@@ -152,6 +168,8 @@ func _make_phish(c: Dictionary) -> Dictionary:
 				goal.blocks = {"addr": [0, ""],
 					"url": [1, "%s wasn't blocked: the fake sign-in page is the attack, so block the link" % host],
 					"domain": [-1, "Blocked %s: they're a real supplier whose mailbox was hacked, so their genuine invoices would be blocked too. Block the link and tell them" % sup[1]]}
+				hint2 = "Auth passes, so it really came from %s's mailbox. So where does the link go, and how do they normally send statements?" % sup[0]
+				hint3 = "Their mailbox was hacked: delete it from every mailbox and block the link %s, not their domain. Then Done, and phone %s on a known number." % [host, sup[0]]
 				explain = "Phish from a real supplier's hacked mailbox. SPF, DKIM and DMARC pass because it really came from their account. The giveaway is the link: a free web.app host showing a Microsoft 365 sign-in page. Delete every copy, block the link (not their domain), and phone %s on a known number so they can secure the mailbox." % sup[0]
 	# Today's other mail to the reporter: find the one they mean
 	var pool: Array = [
@@ -195,6 +213,8 @@ func _make_phish(c: Dictionary) -> Dictionary:
 			"Hold: change nothing. Get it confirmed with the sender on a phone number you already have",
 		],
 		"answer": 1 if kind == "hold" else 0,
+		"hints": ["Open the Mail Console and find the email %s means in today's message trace: match the subject and the time (%s). Then read its headers." % [c.first, m.time],
+			hint2, hint3],
 		"explain": explain + (" Never reply to a suspected phish; verify by a known phone number." if kind == "phish" else ""),
 	}
 
@@ -232,6 +252,13 @@ func _make_lockout(c: Dictionary) -> Dictionary:
 			"Refuse: touch nothing, call back on the number on file, flag to security",
 		],
 		"answer": 1 if acct.goal.hold else 0,
+		"hints": [
+			"Verify the caller before you change anything: open %s in Accounts (watch for a colleague with the same first name) and compare their mobile on file with the number we called back." % c.user,
+			("The mobile on file ends %s, the number we called back. They're verified." % on_file if genuine
+				else "The mobile on file ends %s, but we called back %s, a number the caller gave us. That proves nothing." % [on_file, rang]),
+			("On %s's profile: Unlock, Reset password and turn on Require change at next sign-in. Then press Done on the Ticket tab." % c.user if genuine
+				else "Change nothing in Accounts. Press Refuse on the Ticket tab, then call back on the number on file and flag it to security."),
+		],
 		"explain": ("The callback number is the mobile on file, so the caller is verified. Unlock, reset the password and require a change at next sign-in so only they know the new one."
 			if genuine else
 			"The mobile on file ends %s, not %s. Calling back a number the caller gives you proves nothing: refuse, call back on the number on file and flag it to security." % [on_file, rang]),
@@ -265,6 +292,13 @@ func _make_share(c: Dictionary) -> Dictionary:
 			"Hold: change nothing, get the %s manager's approval first" % dept,
 		],
 		"answer": 1 if acct.goal.hold else 0,
+		"hints": [
+			"Check the request for approval from the %s manager before you grant anything, and note whether %s needs to view files or edit them." % [dept, c.first],
+			("It's approved in the PSA. Read & execute is enough to view files; editing them needs Modify." if approved
+				else "There's no approval in the PSA. \"My manager's fine with it\" from the requester isn't approval from whoever owns the %s data." % dept),
+			("Open %s in Accounts (not their namesake), tick %s and nothing else, then press Done." % [c.user, right] if approved
+				else "Change nothing in Accounts and press Hold: get the %s manager's approval in writing first." % dept),
+		],
 		"explain": ("Least privilege: approved, so add %s to %s and nothing more. They sign out and back in for the new group to apply." % [c.first, right] if approved
 			else "No approval from the data owner. Get it in writing before granting access, however small."),
 	}
@@ -416,6 +450,24 @@ func _make_printer(c: Dictionary) -> Dictionary:
 		"toner_order": "%s is out of black toner and the cupboard's empty: order it on the print contract and hold the ticket until it's fitted. The queue will carry on by itself; nothing on the server needs touching. Meanwhile people can print to %s." % [t.name, other.name],
 		"fuser": "A fuser fault that comes back after a power cycle is a hardware failure for the vendor's technician, and on-site service is on the contract. Log the call and hold the ticket until they've been; meanwhile urgent jobs like the invoices can go to %s." % other.name,
 	}[fault]
+	var clue: String = {
+		"job": "%s answers ping and its web page says Ready, but one job at the top of its queue has errored and everything is waiting behind it." % t.name,
+		"paused": "The printer's fine: %s's queue on PRINT01 is paused. Recent changes says why." % t.name,
+		"ip": "%s doesn't answer at %s any more. DHCP moved to FW01 last week: look for the printer in FW01's leases." % [t.name, t.port_ip],
+		"cable": "%s's switch port shows no link since yesterday evening, so nothing can reach it." % t.name,
+		"toner_spare": "%s's own screen and web page say it's out of black toner." % t.name,
+		"toner_order": "%s's own screen and web page say it's out of black toner." % t.name,
+		"fuser": "%s's panel shows E-542, a fuser fault, and it comes back after a power cycle: that's hardware." % t.name,
+	}[fault]
+	var fix: String = {
+		"job": "Cancel job 1 on the queue, then press Done. Don't clear the spool folder: that loses everyone's jobs.",
+		"paused": "Resume printing on the queue, then press Done.",
+		"ip": "Change %s's port IP to %s, then Add reservation for its lease so it can't move again. Then press Done." % [t.name, new_ip],
+		"cable": "Ask %s to check the printer's network cable at both ends, then press Done." % c.first,
+		"toner_spare": "Ask %s to fit the spare black toner from the cupboard, then press Done." % c.first,
+		"toner_order": "The cupboard's empty: order black toner on the print contract, then press Hold. People can use %s meanwhile." % other.name,
+		"fuser": "Log a service call with the print vendor, then press Hold. Urgent jobs can go to %s." % other.name,
+	}[fault]
 	return {
 		"priority": 3,
 		"subject": "Printer not printing",
@@ -429,6 +481,8 @@ func _make_printer(c: Dictionary) -> Dictionary:
 			"Hold: it's waiting on the vendor or a part. Tell the client",
 		],
 		"answer": 1 if hold else 0,
+		"hints": ["Work from the queue outwards on the Network Map: open PRINT01 and look at %s's queue, then ping the printer and open its web page. Is it the queue, the network or the printer itself?" % t.name,
+			clue, fix],
 		"explain": explain,
 	}
 
@@ -464,6 +518,13 @@ func _make_network(c: Dictionary) -> Dictionary:
 			"Reboot everyone's PC and see if it comes back",
 		],
 		"answer": v,
+		"hints": [
+			"Work outwards from the PC: ipconfig for its address and gateway, ping the gateway (192.168.1.1), ping an outside IP (1.1.1.1), then nslookup google.com to test names.",
+			["Outside IPs answer, but names don't resolve through DC01. Try nslookup google.com 8.8.8.8 to compare.",
+				"The gateway answers, but nothing past it does: ping 1.1.1.1 times out and tracert stops after the first hop.",
+				"Look at the address: 169.254.x.x with no gateway means the PC never got a lease."][v],
+			"Pick \"%s\"." % ["DNS: the DC can't resolve outside names", "WAN/ISP: the internet link is down", "DHCP: PCs aren't getting a lease"][v],
+		],
 		"explain": ["IPs answer (ping 1.1.1.1 replies, tracert completes) but outside names don't resolve. nslookup shows the DC answering for its own domain but returning \"Server failed\" for everything else, so its forwarding is broken (nslookup google.com 8.8.8.8 works, proving it). Next: find out why it can't forward.",
 			"The gateway replies but nothing past it does: ping 1.1.1.1 times out and tracert dies after hop 1. Names fail too, only because the DNS server can't reach the internet either. It's the WAN link. Next: find out why.",
 			"ipconfig shows a 169.254 address with no gateway, and renewing the lease can't reach a DHCP server: the PC has no lease. Next: find out why the DHCP server isn't answering."][v],
@@ -537,6 +598,25 @@ func _network_fix(fault: String, term: Dictionary, c: Dictionary) -> Dictionary:
 				changes.append("Last night: DHCP migrated to DC01 from the old server")
 				events.push_front("Error        DHCP-Server 1046: The DHCP/BINL service on the local machine, belonging to the Windows Administrative domain %s, has determined that it is not authorized to service clients on this network." % c.domain)
 				explain = "The service was running, but in an Active Directory domain a Windows DHCP server won't hand out leases until it's authorised in AD, and last night's migration missed that step. Authorise it in the DHCP console. Restarting the router won't help: DC01 is the DHCP server here, not FW01."
+	var key := "%s%d" % [fault, sub]
+	var hints: Array = [
+		"Start with Recent changes on the Network Map, then open %s." % {
+			"dns": "DC01 (its DNS forwarders) and FW01 (its rules and log)",
+			"wan": "the ISP's status page, then ask %s to read out the modem's lights, then FW01's links" % first,
+			"dhcp": "DC01: its DHCP console, its services and its event log"}[fault],
+		{"dns0": "DC01's only DNS forwarder is the old ISP's resolver, 203.0.113.53, and it doesn't answer any more.",
+			"dns1": "FW01's log shows DC01's DNS queries denied by yesterday's new rule, \"Servers: HTTPS out only\".",
+			"wan0": "The ISP's status page shows an outage in the client's area, with an ETA. Nothing at the office is broken.",
+			"wan1": "The ISP reports no issues, but WAN1 has no carrier. Something's wrong at the modem itself.",
+			"dhcp0": "DC01's event log shows the DHCP Server service crashed after last night's restart, and its Services entry shows recovery set to Take No Action.",
+			"dhcp1": "DC01's event log has event 1046: the DHCP server isn't authorised in Active Directory, so it won't hand out leases."}[key],
+		{"dns0": "On DC01, replace the forwarders with 1.1.1.1 and 8.8.8.8, then press Fixed. Don't point the PCs at 8.8.8.8.",
+			"dns1": "On FW01, add the rule allowing DC01 out on DNS (port 53), and leave the security rule on. Then press Fixed.",
+			"wan0": "Log a fault with the ISP%s, then press Hold and give the client the ETA. Don't factory-reset anything." % (", fail FW01 over to its 4G/5G backup (WAN2)" if net.backup else ""),
+			"wan1": "Ask %s to check the modem's power and cable, then press Fixed. No need to log an ISP fault." % first,
+			"dhcp0": "On DC01, start the DHCP Server service and set its recovery to Restart the Service. Then press Fixed.",
+			"dhcp1": "Authorize the server in DC01's DHCP console, then press Fixed. The router isn't the DHCP server here."}[key],
+	]
 	if rng.randf() < 0.5:
 		changes.reverse()
 	net.changes = changes
@@ -548,6 +628,7 @@ func _network_fix(fault: String, term: Dictionary, c: Dictionary) -> Dictionary:
 		"question": "On the Network Map tab (T): find out why and fix it, then close this step here",
 		"options": ["Fixed: test it from %s's PC" % first, "Hold: it's waiting on the ISP. Give the client the ETA"],
 		"answer": 1 if net.goal.hold else 0,
+		"hints": hints,
 		"explain": explain,
 		"net": net,
 	}
@@ -583,6 +664,11 @@ func _network_verify(fault: String, first: String) -> Dictionary:
 				"ping 127.0.0.1 replies",
 			]
 			explain = "The PC keeps its 169.254 address until it asks again (Windows retries every few minutes), so have them run ipconfig /renew. A real lease with a gateway, then a reply from outside, proves clients get addresses. The service and scope status don't prove that, and loopback answers even with no network."
+	var why: String = {
+		"dns": "Before the fix, DC01 couldn't resolve outside names. Repeat that exact test: nslookup google.com, answered by DC01.",
+		"wan": "Before the fix, nothing past the router answered. Repeat that: ping 1.1.1.1 and tracert past the first hop.",
+		"dhcp": "The PC keeps its old 169.254 address until it asks again: run ipconfig /renew first, then test the internet.",
+	}.get(fault, "")
 	return {
 		"name": "Verify",
 		"info_add": "\n--- %s Back on the phone with %s: prove it from their PC before you close it ---\n" % [
@@ -590,6 +676,8 @@ func _network_verify(fault: String, first: String) -> Dictionary:
 		"question": "Which result proves it's fixed?",
 		"options": options,
 		"answer": 0,
+		"hints": ["Prove it with the test that failed before the fix, run on %s's PC. Anything that worked while it was broken proves nothing." % first,
+			why, "Pick \"%s\"." % options[0]],
 		"explain": explain,
 		"live": true,
 		"term_fault": "renew" if fault == "dhcp" else "ok",
@@ -689,6 +777,13 @@ func _make_licence(c: Dictionary) -> Dictionary:
 			"Hold: assign nothing, ask %s to approve buying one" % mgr,
 		],
 		"answer": 1 if acct.goal.hold else 0,
+		"hints": [
+			"Read what %s needs in the request and find the cheapest licence that covers it. Then check the Licences panel in Accounts for a spare one." % c.first,
+			why,
+			{"spare": "There's a spare %s: open %s (not their namesake) and assign it, then press Done." % [short, c.user],
+				"leaver": "No %s spare, but %s has left and their mailbox is already a shared mailbox: remove their licence, then assign it to %s. Then press Done." % [short, leaver_name, c.user],
+				"buy": "No %s spare and no leaver to free one from: assign nothing and press Hold, asking %s to approve buying one." % [short, mgr]}[stock],
+		],
 		"explain": "%s %s" % [why, how],
 	}
 
@@ -774,6 +869,26 @@ func _make_mfa(c: Dictionary) -> Dictionary:
 		"rule": "The attacker then made a hidden inbox rule (\".\" moving \"%s\" mail to RSS Feeds) to hide replies: delete it, but leave %s's own rule. No new MFA method." % [keyword, c.first],
 		"none": "Nothing new on the account yet (no new MFA method or inbox rule), so there's nothing of theirs to remove: throwing them out is the fix.",
 	}[foothold]
+	var found: String = {
+		"both": " Today they also added their own Authenticator (on a %s) and a hidden inbox rule named \".\"." % rogue_phone,
+		"method": " Today they also added their own Authenticator, on a %s. No new inbox rule." % rogue_phone,
+		"rule": " Today they also made a hidden inbox rule named \".\". No new MFA method.",
+		"none": " Nothing new was added to the account.",
+	}[foothold]
+	var todo := "Reset password and turn on Require change at next sign-in"
+	if got_in:
+		todo += ", then Revoke all sessions"
+		if foothold in ["both", "method"]:
+			todo += ", remove the Authenticator on the %s" % rogue_phone
+		if foothold in ["both", "rule"]:
+			todo += ", delete the \".\" rule"
+	todo += ". Leave %s's own phone and rules alone, don't turn MFA off or trust that IP, then press Done." % c.first
+	var hints: Array = [
+		"Open %s in Accounts and read their sign-in log: was any push APPROVED? Then check their sessions, MFA methods and inbox rules for anything added today." % c.user,
+		("At 02:%02d a push was approved from %s: the attacker got in.%s" % [approved, ip, found] if got_in
+			else "Every push was denied and nothing was added, but each one followed a correct password: the attacker knows it."),
+		todo,
+	]
 	var explain := ""
 	if got_in:
 		explain = "The 02:%02d sign-in was approved, so the attacker got in. Reset the password with a change at next sign-in, then revoke all sessions: a reset doesn't reliably sign out sessions that are already open, and tokens already issued keep working until they expire. %s Then check what was sent from the mailbox." % [approved, what]
@@ -793,6 +908,7 @@ func _make_mfa(c: Dictionary) -> Dictionary:
 			"Hold: change nothing until %s can confirm what they did" % c.first,
 		],
 		"answer": 0,
+		"hints": hints,
 		"explain": explain,
 	}
 
@@ -868,6 +984,15 @@ func _make_bitlocker(c: Dictionary) -> Dictionary:
 	else:
 		explain = "The caller is verified, but %s has %s. Without the key whose ID matches %s, no key can unlock that drive: read out nothing and hold. First try undoing what triggered it (unplug the new dock, put back any changed BIOS setting) in case the TPM unlocks it again, and check anywhere else the key may have been saved; if none of that works, the laptop has to be wiped and rebuilt, and anything not synced to OneDrive is lost." % [
 			lap.name, "only an old key that has since been replaced, with a different ID" if stale else "no BitLocker key backed up to Entra at all", screen]
+	var hints: Array = [
+		"Verify the caller first: compare %s's mobile on file in Accounts with the number we called back. Then open their devices and look for a key whose ID starts %s, the one on their screen." % [c.user, screen],
+		("The mobile on file ends %s, but we called back %s, a number the caller gave us. They aren't verified." % [on_file, rang] if not genuine
+			else ("They're verified. Only one key, on %s, has an ID starting %s: check all eight characters, not just the first four." % [lap.name, screen] if has_key
+			else "They're verified, but none of the keys in Entra has an ID starting %s." % screen)),
+		("Read out nothing: press Hold, call back on the number on file and flag it to security." if not genuine
+			else ("Show the key on %s with ID %s, read it out to the caller, then press Done." % [lap.name, key_id.substr(0, 8)] if has_key
+			else "Read out nothing and press Hold: no other key can unlock that drive.")),
+	]
 	var cause: String = _pick(["after an update last night", "after a BIOS update last night", "since I plugged it into the new docking station"])
 	return {
 		"priority": 1 if exec else 2,
@@ -882,6 +1007,7 @@ func _make_bitlocker(c: Dictionary) -> Dictionary:
 			"Hold: read out nothing. Not verified, or no key matches",
 		],
 		"answer": 1 if acct.goal.hold else 0,
+		"hints": hints,
 		"explain": explain,
 	}
 
@@ -950,6 +1076,13 @@ func _make_driver(c: Dictionary) -> Dictionary:
 		"goal": {"hold": hold, "pc": target, "model": m.model, "arch": arch,
 			"hold_why": "the PC is ARM-based and Kestrel has no ARM64 driver for the %s. x64 drivers can't load on Windows on Arm" % m.model},
 	}
+	var hints: Array = [
+		"On Remote Control, connect to %s's own PC (not their namesake's). In Device Manager, open the scanner's properties for its hardware ID, then check the processor in Settings." % c.user,
+		"Hardware ID PID_%s is the %s%s, and Settings says %s processor." % [m.pid, m.model, " (not the %s the caller said)" % said if said != m.model else "",
+			"an ARM-based" if arch == "ARM64" else "an x64-based"],
+		("Kestrel has no ARM64 driver for the %s, and x64 drivers can't load on Arm. Install nothing and press Hold." % m.model if hold
+			else "On the vendor's page, install the %s %s package (never the driver updater ad), then press Done." % [m.model, arch]),
+	]
 	return {
 		"priority": 3,
 		"subject": "New scanner isn't working",
@@ -957,6 +1090,7 @@ func _make_driver(c: Dictionary) -> Dictionary:
 		"info_title": "Call notes",
 		"info": "Caller:    %s, signed in on their PC now\nDevice:    Kestrel %s (so they say), USB, plugged in today\nSymptom:   scan app: \"No scanner found\"\nDrivers:   %s (vendor site)\nAccess:    they're happy for us to remote on" % [c.user, said, rc.site],
 		"rc": rc,
+		"hints": hints,
 		"question": "On the Remote Control tab (T): install the right driver, or hold",
 		"options": [
 			"Done: the right driver is installed and the scanner works",

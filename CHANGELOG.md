@@ -1,5 +1,10 @@
 # Changelog
 
+## Day 17 — 2026-11-25
+- Stuck on a ticket? Ask a Senior: press the new button under the answers (or H) and a senior tech gives you a hint
+- Every ticket, and every step of a multi-step one, has three hints: where to look, what the evidence means, then exactly what to do. Your latest hint also shows at the top of the tool you're working in
+- Each hint costs a quarter of that step's pay, so solving it yourself still pays best. Your shift summary counts how many you asked for
+
 ## Day 16 — 2026-11-24
 - Locked out by BitLocker: a new ticket where the caller's laptop is stuck on the blue recovery screen. Find their key in Accounts and read it out
 - First check the callback number against the mobile on file. Then open their devices and match the key ID on their screen: not their old laptop's, not the data drive's, not an older key for the same drive

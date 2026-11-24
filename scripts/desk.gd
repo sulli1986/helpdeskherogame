@@ -4,6 +4,8 @@ extends Control
 ## Toolbox: each tool is its own tab beside the Ticket tab (like a separate admin app). T switches
 ## between the ticket and the tool it needs (Accounts, Remote Control, Mail Console or Network Map). Tickets fixed in a tool are
 ## closed on the Ticket tab with "Done" / "Hold".
+## Ask a Senior (H, or the button under the answers): each press reveals the next of the step's three
+## hints (t.hints), and each one revealed takes HINT_COST off what that step pays.
 
 signal shift_ended(stats: Dictionary)
 signal cash_earned(amount: int, resolved: bool)  # resolved: the ticket is closed (not just one step)
@@ -29,6 +31,7 @@ const REP_BREACH := 12.0
 const REP_RIGHT := 2.0
 const STEP_PAY := 0.5                  # multi-step tickets: each step pays this share of the ticket's pay
 const MAX_QUEUE := 8
+const HINT_COST := 0.25                # Ask a Senior: each hint revealed takes this share off the step's pay
 const TOOL_ABOUT := {
 	"accounts": "Accounts: the client's users, groups, licences and sign-in settings. Nothing on this ticket needs a change here.",
 	"remote": "Remote Control: connect to one of the client's PCs and work on it. Nothing on this ticket needs it.",
@@ -48,6 +51,7 @@ var rep := 100.0
 var solved := 0
 var correct := 0
 var breaches := 0
+var hints_asked := 0       # Ask a Senior: hints revealed this shift
 var spawn_scale := 1.0     # demo speeds up arrivals
 var clock_scale := 1.0     # demo runs the shift clock faster
 var first_kind := ""       # demo forces the first ticket's type
@@ -107,6 +111,10 @@ var _remote: Node              # scripts/remote.gd, the Remote Control tab
 var _mail: Node                # scripts/mail.gd, the Mail Console tab
 var _net: Node                 # scripts/netmap.gd, the Network Map tab
 var _tool_empty: Label         # a tool tab on a ticket that doesn't need it
+var _senior_btn: Button        # Ask a Senior, under the answers
+var _senior_box: PanelContainer
+var _senior_label: Label       # the hints revealed so far on this step
+var _tool_hint: Label          # the latest hint, repeated at the top of the tool tabs
 
 
 func _ready() -> void:
@@ -134,6 +142,7 @@ func start(seed_value := -1) -> void:
 	solved = 0
 	correct = 0
 	breaches = 0
+	hints_asked = 0
 	_end_reason = ""
 	_next_spawn = 20.0 / spawn_scale
 	running = true
@@ -214,6 +223,41 @@ func toggle_toolbox() -> void:
 	show_tab((_tool_for(current) if _tab == "ticket" else "ticket"))
 
 
+## Ask a Senior: reveal the next hint for this step. Each one costs HINT_COST of the step's pay.
+func ask_senior() -> void:
+	if current.is_empty() or _answered or not running:
+		return
+	var hints: Array = current.get("hints", [])
+	var used: int = current.get("hints_used", 0)
+	if used >= hints.size():
+		return
+	current.hints_used = used + 1
+	hints_asked += 1
+	_show_toast("Senior's hint: -%d%% pay" % int(HINT_COST * 100), UI.ACCENT)
+	_sfx("type")
+	_update_senior()
+	if _tab != "ticket":
+		show_tab(_tab)  # refresh the hint line at the top of the tool
+
+
+## The Ask a Senior button and the hints revealed so far on this step.
+func _update_senior() -> void:
+	var hints: Array = current.get("hints", [])
+	var used: int = current.get("hints_used", 0)
+	_senior_btn.visible = not current.is_empty() and not hints.is_empty()
+	_senior_btn.disabled = _answered or used >= hints.size()
+	if used >= hints.size():
+		_senior_btn.text = "The senior has told you all they know"
+	else:
+		_senior_btn.text = "%s  (-%d%% of this step's pay)%s" % ["Ask a Senior" if used == 0 else "Ask the senior again",
+			int(HINT_COST * 100), "" if _touch else "   H"]
+	_senior_box.visible = used > 0
+	var lines: Array = []
+	for i in mini(used, hints.size()):
+		lines.append("%d. %s" % [i + 1, hints[i]])
+	_senior_label.text = "Senior tech:\n" + "\n".join(lines)
+
+
 func _tool_for(t: Dictionary) -> String:
 	if t.has("net"):
 		return "net"
@@ -250,6 +294,9 @@ func show_tab(name: String) -> void:
 	_net.visible = name == "net" and tool == "net"
 	_tool_empty.visible = name != "ticket" and tool != name
 	_tool_empty.text = TOOL_ABOUT.get(name, "")
+	_tool_hint.visible = name != "ticket" and tool == name and not _answered and current.get("hints_used", 0) > 0
+	if _tool_hint.visible:
+		_tool_hint.text = "Senior: %s" % current.hints[current.hints_used - 1]
 	if _accounts.visible:
 		_accounts.touch = _touch
 		_accounts.open(current.acct, current.client, not _answered)
@@ -273,6 +320,7 @@ func _resolve(ok: bool, i: int) -> void:
 	if ok:
 		var left_frac: float = clampf(1.0 - current.age / current.sla, 0.0, 1.0)
 		var share: float = STEP_PAY if current.has("steps") else 1.0
+		share *= 1.0 - HINT_COST * current.get("hints_used", 0)
 		pay = int(round(PAY[current.priority] * share * (1.0 + 0.5 * left_frac) / 10.0)) * 10
 		cash += pay
 		if not more:
@@ -292,6 +340,7 @@ func _resolve(ok: bool, i: int) -> void:
 	for chip in _term_chips.get_children():
 		chip.disabled = true
 	_show_feedback(ok, pay, more)
+	_update_senior()
 	if more:
 		_advance_step(current)
 	else:
@@ -317,6 +366,8 @@ func _advance_step(t: Dictionary) -> void:
 		t.tab = "ticket"
 	t.options = st.options
 	t.answer = st.answer
+	t.hints = st.get("hints", [])
+	t.hints_used = 0  # a new step: the senior starts over, and so does the cost
 	(t.row.get_meta("subject") as Label).text = "%s  (step %d: %s)" % [t.subject, t.step_no, st.name]
 
 
@@ -349,6 +400,8 @@ func _unhandled_input(event: InputEvent) -> void:
 			next_ticket()
 	elif k == KEY_T:
 		toggle_toolbox()
+	elif k == KEY_H:
+		ask_senior()
 	elif k == KEY_TAB or k == KEY_DOWN:
 		select_offset(1)
 	elif k == KEY_UP:
@@ -389,6 +442,7 @@ func _breach(t: Dictionary) -> void:
 		_term_input.focus_mode = Control.FOCUS_NONE
 		for chip in _term_chips.get_children():
 			chip.disabled = true
+		_update_senior()
 		_feedback_label.text = "SLA breached. The client escalated to their account manager.\n\n%s" % t.explain
 		_next_btn.text = _next_hint()
 		_feedback.add_theme_stylebox_override("panel", UI.box(UI.BAD.darkened(0.6), 8, 14))
@@ -424,7 +478,7 @@ func _end(reason: String) -> void:
 	_end_reason = reason
 	shift_ended.emit({
 		"cash": cash, "solved": solved, "correct": correct, "breaches": breaches,
-		"rep": int(maxf(rep, 0.0)), "reason": reason,
+		"rep": int(maxf(rep, 0.0)), "reason": reason, "hints": hints_asked,
 	})
 
 
@@ -493,6 +547,7 @@ func _show_ticket(t: Dictionary) -> void:
 	else:
 		_term_input.release_focus()
 	_question.text = t.question
+	_update_senior()
 	if t.has("acct") and not is_same(_accounts.acct, t.acct):
 		_accounts.selected = ""  # a different ticket: start from the user list
 	_tool_scroll.scroll_vertical = 0
@@ -594,6 +649,9 @@ func _show_feedback(ok: bool, pay: int, more := false) -> void:
 	var head := ("Resolved. +$%d" % pay) if ok else "Wrong call. Escalated to Tier 2."
 	if more:
 		head = "%s: right. +$%d" % [current.step_name, pay]
+	var used: int = current.get("hints_used", 0)
+	if ok and used > 0:
+		head += "  (the senior's %d hint%s cost %d%% of it)" % [used, "" if used == 1 else "s", int(HINT_COST * 100) * used]
 	_feedback_label.text = "%s\n\n%s" % [head, current.explain]
 	_next_btn.text = _next_hint(more)
 	_feedback.add_theme_stylebox_override("panel", UI.box((UI.GOOD if ok else UI.BAD).darkened(0.6), 8, 14))
@@ -777,6 +835,8 @@ func _build() -> void:
 	var tcol := VBoxContainer.new()
 	tcol.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_tool_scroll.add_child(tcol)
+	_tool_hint = UI.wrap(UI.label(tcol, "", 14, UI.ACCENT))
+	_tool_hint.visible = false
 	_accounts = Accounts.new()
 	_accounts.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_accounts.changed.connect(func() -> void: _sfx("type"))
@@ -864,6 +924,18 @@ func _build() -> void:
 	_opts = VBoxContainer.new()
 	_opts.add_theme_constant_override("separation", 6)
 	_detail.add_child(_opts)
+	_senior_btn = Button.new()
+	_senior_btn.focus_mode = Control.FOCUS_NONE
+	_senior_btn.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+	_senior_btn.custom_minimum_size = Vector2(0, 44 if DisplayServer.is_touchscreen_available() else 34)
+	_senior_btn.add_theme_font_size_override("font_size", 14)
+	_senior_btn.pressed.connect(ask_senior)
+	_detail.add_child(_senior_btn)
+	_senior_box = PanelContainer.new()
+	_senior_box.add_theme_stylebox_override("panel", UI.box(UI.ROW, 6, 10, UI.ACCENT))
+	_senior_box.visible = false
+	_detail.add_child(_senior_box)
+	_senior_label = UI.wrap(UI.label(_senior_box, "", 14, UI.TEXT))
 	_feedback = PanelContainer.new()
 	_feedback.visible = false
 	_detail.add_child(_feedback)

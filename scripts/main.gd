@@ -169,8 +169,10 @@ func _on_shift_ended(stats: Dictionary) -> void:
 		save_game()
 	var acc := 0 if int(stats.solved) == 0 else int(round(100.0 * stats.correct / stats.solved))
 	var stars := 1 + int(acc >= 60) + int(acc >= 80) + int(stats.breaches <= 2) + int(stats.cash >= 3000)
-	_summary_text.text = "%s\n\nEarned: $%s\nTickets: %d worked, %d right (%d%%)\nSLA breaches: %d\nReputation: %d/100\n\n%s\n\nCareer: $%s%s" % [
+	var hints := int(stats.get("hints", 0))
+	_summary_text.text = "%s\n\nEarned: $%s\nTickets: %d worked, %d right (%d%%)\nSLA breaches: %d\nReputation: %d/100%s\n\n%s\n\nCareer: $%s%s" % [
 		stats.reason, UI.money(stats.cash), stats.solved, stats.correct, acc, stats.breaches, stats.rep,
+		"\nAsked a senior: %d hint%s" % [hints, "" if hints == 1 else "s"] if hints > 0 else "",
 		"★".repeat(stars) + "☆".repeat(5 - stars), UI.money(career.coins),
 		"" if _logged_in else "\n(Guest: log in to save your career)"]
 	summary.visible = true

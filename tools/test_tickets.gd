@@ -61,6 +61,7 @@ func _check(kind: String, t: Dictionary) -> void:
 		if str(t[k]).strip_edges() == "":
 			_fail(kind, "empty '%s'" % k)
 	var text := " ".join([t.subject, t.body, t.info, t.question, t.explain, t.client, " ".join(opts)]).to_lower()
+	text += " " + _check_hints(kind, t, "step 1")
 	if t.has("steps"):
 		if not t.has("step_name"):
 			_fail(kind, "multi-step ticket has no step_name for step 1")
@@ -83,6 +84,7 @@ func _check(kind: String, t: Dictionary) -> void:
 					if str(st[k]).strip_edges() == "":
 						_fail(kind, "empty step '%s'" % k)
 				text += " " + " ".join([st.info_add, st.question, st.explain]).to_lower()
+				text += " " + _check_hints(kind, st, st.name)
 	if t.has("acct"):
 		_check_acct(kind, t)
 		for u in t.acct.users:
@@ -129,6 +131,27 @@ func _check(kind: String, t: Dictionary) -> void:
 			_fail(kind, "region-specific term '%s'" % b)
 	if "%" in text.replace("%%", "") and ("%s" in text or "%d" in text):
 		_fail(kind, "unfilled format placeholder")
+
+
+## Ask a Senior: every ticket and every later step has three non-empty hints, and a hint that names
+## an answer to pick must name one of that step's options. Returns the hints' text (lower case).
+func _check_hints(kind: String, t: Dictionary, where: String) -> String:
+	var h = t.get("hints", null)
+	if not (h is Array) or h.size() != 3:
+		_fail(kind, "%s: needs exactly 3 Ask a Senior hints" % where)
+		return ""
+	for x in h:
+		if not (x is String) or x.strip_edges() == "":
+			_fail(kind, "%s: empty hint" % where)
+			return ""
+	var last: String = h[2]
+	if last.begins_with("Pick \""):
+		var said := last.trim_prefix("Pick \"").trim_suffix("\".")
+		if not said in t.options:
+			_fail(kind, "%s: hint names an option that isn't there: %s" % [where, said])
+		elif t.options.find(said) != t.answer:
+			_fail(kind, "%s: hint points at a wrong answer: %s" % [where, said])
+	return " ".join(h).to_lower()
 
 
 ## Toolbox > Network Map tickets: Done / Hold; doing what the fault needs must pass (and the other

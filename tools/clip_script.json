@@ -1,20 +1,20 @@
 {
- "day": 16,
+ "day": 17,
  "lines": [
   {
-   "text": "Laptop stuck asking for a BitLocker key? You've got it."
+   "text": "Stuck on a ticket? Now you can ask a senior tech."
   },
   {
-   "text": "First, check the callback number matches the mobile on file.",
-   "at": 4.5
+   "text": "Each hint gets more specific: where to look, then what it means.",
+   "at": 4.0
   },
   {
-   "text": "Then match the key ID on their screen. Not the old laptop's.",
-   "at": 9.5
+   "text": "The last one tells you exactly what to do, but costs pay.",
+   "at": 9.0
   },
   {
-   "text": "Read out the right key, and they're back in Windows.",
-   "at": 14.0
+   "text": "Then do the fix yourself, and close it out.",
+   "at": 13.5
   }
  ]
 }
