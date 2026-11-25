@@ -1,20 +1,20 @@
 {
- "day": 17,
+ "day": 18,
  "lines": [
   {
-   "text": "Stuck on a ticket? Now you can ask a senior tech."
+   "text": "Who's allowed to approve that access? Check the new Client Wiki."
   },
   {
-   "text": "Each hint gets more specific: where to look, then what it means.",
-   "at": 4.0
+   "text": "Every client has a page: who owns each department's files, and their deputy.",
+   "at": 3.5
   },
   {
-   "text": "The last one tells you exactly what to do, but costs pay.",
-   "at": 9.0
+   "text": "The deputy approved this one, so grant it in Accounts. Read or modify, nothing more.",
+   "at": 8.5
   },
   {
-   "text": "Then do the fix yourself, and close it out.",
-   "at": 13.5
+   "text": "But if a team leader signs off, hold it until the right person approves.",
+   "at": 15.0
   }
  ]
 }

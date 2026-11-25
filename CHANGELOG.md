@@ -1,5 +1,10 @@
 # Changelog
 
+## Day 18 — 2026-11-26
+- Who can say yes? Check the Client Wiki: a new tab (W) with every client's own page, showing who owns each department's files and their deputy, plus the client's procedures and servers
+- Access requests now need the right approver. Check the wiki: grant it in Accounts only when the data's owner or deputy approved it
+- A team leader, or the owner of a different department's files, can't approve it. Change nothing and hold until the right person does
+
 ## Day 17 — 2026-11-25
 - Stuck on a ticket? Ask a Senior: press the new button under the answers (or H) and a senior tech gives you a hint
 - Every ticket, and every step of a multi-step one, has three hints: where to look, what the evidence means, then exactly what to do. Your latest hint also shows at the top of the tool you're working in

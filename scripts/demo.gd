@@ -9,7 +9,7 @@ const END_AT := 27.0
 const READ_TIME := 2.4      # seconds "reading" a ticket before answering
 const RESULT_TIME := 1.8    # seconds showing the explanation
 const WRONG_AT := 17.0      # one deliberate wrong call after the feature (shows the penalty)
-const SEED := 11            # Day 17: a verified director locked out (P1): the senior's hints walk it through
+const SEED := 36            # Day 18: Clearwater Dental: Marketing access approved by the data's deputy on the Client Wiki
 
 var main: Node
 var desk: Node
@@ -22,7 +22,7 @@ var _wrong_done := false
 var _typing: Array = []     # commands still to type into a network ticket's terminal
 var _typed := ""
 var _plan: Array = []       # Day 9: Toolbox > Accounts moves still to make, each [callable, pause]
-var _senior := true         # Day 17: ask the senior for every hint on the first ticket before working it
+var _senior := false        # Day 17 clip: ask the senior for every hint on the first ticket (off since Day 18)
 
 
 func start(m: Node) -> void:
@@ -54,7 +54,7 @@ func _start_shift() -> void:
 	main.summary.visible = false
 	desk.spawn_scale = 4.0
 	desk.clock_scale = 8.0   # the clock visibly moves, but the shift doesn't end in the clip
-	desk.first_kind = "lockout"  # Day 17: Ask a Senior, shown on a lockout worked in Accounts
+	desk.first_kind = "share"  # Day 18: Client Wiki: check who can approve, then grant it in Accounts
 	desk.start(SEED)
 	_auto = true
 	_step_t = 2.8  # the hook line plays over the first ticket
@@ -139,12 +139,19 @@ func _process(delta: float) -> void:
 func _plan_accounts(t: Dictionary) -> void:
 	var acc: Node = desk._accounts
 	var goal: Dictionary = t.acct.goal
-	_plan = [
+	_plan = []
+	if t.get("wiki", false):  # Day 18: who owns this data? The Client Wiki's data owners table
+		var wiki: Node = desk._wiki
+		_plan.append_array([
+			[desk.show_tab.bind("wiki"), 0.1],
+			[func() -> void: _scroll_to(wiki.owners_head if wiki.owners_head else wiki), 4.0],
+		])
+	_plan.append_array([
 		[desk.show_tab.bind("accounts"), 0.1],
 		[_scroll_to.bind(acc), 1.4],
 		[acc.select.bind(goal.sam), 0.1],
-		[_scroll_to.bind(acc._profile), 4.2],  # "check their mobile on file"
-	]
+		[_scroll_to.bind(acc._profile), 2.4 if t.get("wiki", false) else 4.2],  # "check their mobile on file"
+	])
 	if t.acct.get("security", false):  # Day 15: read the sign-in log, then contain it
 		_plan.append([func() -> void: _scroll_to(acc.sec_log if acc.sec_log else acc), 3.2])
 	if t.acct.get("bitlocker", false):  # Day 16: match the key ID on their screen, show it, read it out

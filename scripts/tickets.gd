@@ -267,40 +267,150 @@ func _make_lockout(c: Dictionary) -> Dictionary:
 
 # ---------------------------------------------------------------- file share access
 ## Done in Toolbox > Accounts: tick the right group for the right user, or hold for approval.
+## Done in Toolbox > Accounts after checking Toolbox > Client Wiki: only the data's owner or their
+## listed deputy can approve access to a share (not a line manager, not another department's owner).
+## Approved by one of them: add the one group that fits (Read or Modify) and nothing else. Otherwise hold.
+const DEPTS := ["Finance", "HR", "Projects", "Marketing"]
+
+
 func _make_share(c: Dictionary) -> Dictionary:
-	var dept: String = _pick(["Finance", "HR", "Projects", "Marketing"])
+	var wiki := wiki_page(c.client)
+	var guard := 0
+	while c.user in wiki.people and guard < 200:  # the requester isn't on the client's wiki page
+		guard += 1
+		c.first = _pick(FIRST)
+		c.last = _pick(LAST)
+		c.user = "%s %s" % [c.first, c.last]
+		c.sam = (c.first.substr(0, 1) + c.last).to_lower()
+	var depts: Array = DEPTS.duplicate()
+	_shuffle(depts)
+	var dept: String = depts[0]
+	var own: Dictionary = wiki.owners[dept]
 	var edit := rng.randf() < 0.5
-	var approved := rng.randf() < 0.75
-	var manager := "%s %s" % [_pick(FIRST), _pick(LAST)]
+	var roll := rng.randf()
+	var who: String = "owner" if roll < 0.3 else ("deputy" if roll < 0.5 else ("other" if roll < 0.7 else ("lead" if roll < 0.85 else "none")))
+	var approver := ""
+	var other_dept := ""
+	if who == "owner":
+		approver = own.owner
+	elif who == "deputy":
+		approver = own.deputy
+	elif who == "other":
+		other_dept = depts[1]
+		approver = wiki.owners[other_dept].owner
+	elif who == "lead":
+		guard = 0
+		while guard < 200:
+			guard += 1
+			approver = "%s %s" % [_pick(FIRST), _pick(LAST)]
+			if not approver.begins_with(c.first + " ") and not approver in wiki.people:
+				break
+	var approved := who in ["owner", "deputy"]
 	var right := "GG_%s_%s" % [dept, "Modify" if edit else "Read"]
 	var acct := _directory(c, _pick(["Office Manager", "Accounts", "Reception", "Project Lead", "Designer"]), dept)
 	acct.orig = acct.users.duplicate(true)
+	var hold_why := "nobody approved it, and only the %s data's owner (%s) or deputy (%s) can" % [dept, own.owner, own.deputy]
+	if who == "other":
+		hold_why = "%s owns the %s data, not %s, so their approval doesn't count" % [approver, other_dept, dept]
+	elif who == "lead":
+		hold_why = "%s isn't the %s data's owner or deputy on the Client Wiki, so their approval doesn't count" % [approver, dept]
 	acct.goal = {"hold": not approved, "sam": c.sam, "unlock": false, "reset": false, "must_change": false, "add": [right],
-		"hold_why": "nobody who owns the %s data approved it" % dept}
+		"hold_why": hold_why}
 	acct.erase("target")
-	var approval_line := "Approved by %s (%s manager) in the PSA" % [manager, dept] if approved else "Approval: none. %s says \"my manager's fine with it\"" % c.first
+	var approval_line := "Approval:  none. %s says \"my manager's fine with it\"" % c.first
+	if who == "lead":
+		approval_line = "Approval:  %s in the PSA: \"Approved, I'm %s's team leader\"" % [approver, c.first]
+	elif who != "none":
+		approval_line = "Approval:  %s in the PSA: \"Approved\"" % approver
+	var meaning := ""
+	match who:
+		"owner": meaning = "%s is the %s data's owner on the Client Wiki, so the approval counts." % [approver, dept]
+		"deputy": meaning = "%s is listed as the %s data's deputy on the Client Wiki, so the approval counts." % [approver, dept]
+		"other": meaning = "%s is on the Client Wiki, but as the owner of the %s data, not %s. That approval doesn't count here." % [approver, other_dept, dept]
+		"lead": meaning = "%s isn't the %s data's owner or deputy on the Client Wiki. A team leader can't approve access to data they don't own." % [approver, dept]
+		"none": meaning = "There's no approval at all. \"My manager's fine with it\" from the requester isn't approval from the %s data's owner." % dept
+	meaning += " Read & execute is enough to view files; editing them needs Modify."
+	var explain := ""
+	if approved:
+		explain = "%s is the %s data's %s on the Client Wiki, so it's approved. Least privilege: add %s to %s and nothing more. They sign out and back in for the new group to apply." % [
+			approver, dept, who, c.first, right]
+	else:
+		var why := "Nobody has approved it"
+		if who == "other":
+			why = "%s owns the %s data, not %s" % [approver, other_dept, dept]
+		elif who == "lead":
+			why = "%s is a team leader, not the %s data's owner or deputy" % [approver, dept]
+		explain = "%s. Only the data's owner or their deputy can approve access to it (Client Wiki), so change nothing and ask %s or %s to approve it in the PSA." % [
+			why, own.owner, own.deputy]
 	return {
 		"priority": 3,
 		"subject": "Need access to the %s share" % dept,
 		"body": "%s needs to %s files in \\\\FS01\\%s." % [c.user, "edit" if edit else "view", dept],
 		"info_title": "Request",
-		"info": "Share:     \\\\FS01\\%s\nNTFS:      GG_%s_Read (Read & execute), GG_%s_Modify (Modify)\nAsked for: %s access for %s\n%s" % [dept, dept, dept, "edit" if edit else "read-only", c.user, approval_line],
+		"info": "Share:     \\\\FS01\\%s\nNTFS:      GG_%s_Read (Read & execute), GG_%s_Modify (Modify)\nAsked for: %s access for %s\n%s\nPolicy:    the data's owner or deputy approves (Client Wiki)" % [dept, dept, dept, "edit" if edit else "read-only", c.user, approval_line],
 		"acct": acct,
-		"question": "Grant it on the Accounts tab (T), or hold it",
+		"wiki": true,
+		"question": "Check the Client Wiki (W), then grant it in Accounts (T) or hold",
 		"options": [
 			"Done: I've granted it in Accounts",
-			"Hold: change nothing, get the %s manager's approval first" % dept,
+			"Hold: change nothing, get the %s data owner's approval first" % dept,
 		],
 		"answer": 1 if acct.goal.hold else 0,
 		"hints": [
-			"Check the request for approval from the %s manager before you grant anything, and note whether %s needs to view files or edit them." % [dept, c.first],
-			("It's approved in the PSA. Read & execute is enough to view files; editing them needs Modify." if approved
-				else "There's no approval in the PSA. \"My manager's fine with it\" from the requester isn't approval from whoever owns the %s data." % dept),
+			"Open the Client Wiki tab and find who owns the %s data and who their deputy is. Then compare with who approved this request, and note whether %s needs to view files or edit them." % [dept, c.first],
+			meaning,
 			("Open %s in Accounts (not their namesake), tick %s and nothing else, then press Done." % [c.user, right] if approved
-				else "Change nothing in Accounts and press Hold: get the %s manager's approval in writing first." % dept),
+				else "Change nothing in Accounts and press Hold: %s or %s has to approve it in the PSA first." % [own.owner, own.deputy]),
 		],
-		"explain": ("Least privilege: approved, so add %s to %s and nothing more. They sign out and back in for the new group to apply." % [c.first, right] if approved
-			else "No approval from the data owner. Get it in writing before granting access, however small."),
+		"explain": explain,
+	}
+
+
+## Toolbox > Client Wiki: each client's page, the same every time for that client (seeded from its
+## name, not the shift). Who owns each department's data (and their deputy), the client's procedures.
+## people = every name on the page, so tickets can pick someone who isn't on it.
+const WIKI_ABOUT := {
+	"Greenfield Wines": "Family winery with a tasting room and a small office", "Ironbridge Freight": "Road freight depot and dispatch office",
+	"Maple & Stone Legal": "Law firm: partners, lawyers and support staff", "Clearwater Dental": "Dental practice with two treatment rooms and a front desk",
+	"Oakline Architects": "Architecture studio working on big CAD and image files", "Summit Physio": "Physiotherapy clinic with a reception desk and treatment rooms",
+	"Bluepeak Logistics": "Warehouse and logistics office", "Riverbend Realty": "Real estate agency: sales and property management",
+}
+const OWNER_TITLES := {"Finance": ["Finance Manager", "Senior Accountant"], "HR": ["HR Manager", "HR Advisor"],
+	"Projects": ["Projects Manager", "Senior Project Lead"], "Marketing": ["Marketing Manager", "Marketing Coordinator"]}
+
+
+static func wiki_page(client: String) -> Dictionary:
+	var r := RandomNumberGenerator.new()
+	r.seed = client.hash()
+	var domain := ""
+	for c in CLIENTS:
+		if c[0] == client:
+			domain = c[1]
+	var people: Array = []
+	var sams: Array = []
+	while people.size() < 9:  # a director, then an owner and a deputy for each department's data
+		var f: String = FIRST[r.randi() % FIRST.size()]
+		var l: String = LAST[r.randi() % LAST.size()]
+		var sam := (f.substr(0, 1) + l).to_lower()
+		if not sam in sams:
+			sams.append(sam)
+			people.append("%s %s" % [f, l])
+	var owners := {}
+	for i in DEPTS.size():
+		var d: String = DEPTS[i]
+		owners[d] = {"owner": people[1 + i * 2], "owner_title": OWNER_TITLES[d][0],
+			"deputy": people[2 + i * 2], "deputy_title": OWNER_TITLES[d][1]}
+	return {
+		"client": client, "domain": domain, "about": WIKI_ABOUT.get(client, "Small business"),
+		"hours": "%d:%s am to 5:%s pm, Monday to Friday" % [7 + r.randi() % 2, ["00", "30"][r.randi() % 2], ["00", "30"][r.randi() % 2]],
+		"director": people[0], "owners": owners, "people": people,
+		"servers": ["DC01: domain controller and DNS", "FS01: file server (the Finance, HR, Projects and Marketing shares)",
+			"PRINT01: print server", "FW01: firewall and internet link"],
+		"procedures": [
+			"Access to a share: only that data's owner or their deputy (below) can approve it, in writing in the PSA. Nobody else can: not a line manager, a team leader, or another department's owner. Grant the least access that does the job.",
+			"Identity checks before you act on a caller's request (unlock or reset their password, change their MFA, read out a BitLocker key): call back on the mobile on file in Accounts, never on a number the caller gives you. Containing a compromised account (reset the password, revoke sessions, remove the attacker's methods) doesn't wait for a callback: do it straight away.",
+			"Supplier bank details: never change them because of an email. The client's accounts team confirms by phoning the supplier on the number already in their accounting system.",
+		],
 	}
 
 
