@@ -93,6 +93,21 @@ func _check(kind: String, t: Dictionary) -> void:
 				text += " " + " ".join([d.name, d.about] + d.keys.map(func(k): return k.drive + " " + k.when)).to_lower()
 			if t.acct.get("security", false):
 				text += " " + " ".join(u.signins + u.sessions + u.auth.map(func(m): return m.text) + u.rules.map(func(r): return r.text)).to_lower()
+	if t.has("chat"):  # Toolbox > Messages: every question has an answer; needed ones say what's missing
+		var ch: Dictionary = t.chat
+		if str(ch.get("with", "")).strip_edges() == "" or not (ch.get("log") is Array) or ch.get("asks", []).is_empty():
+			_fail(kind, "chat has no caller, log or questions")
+		else:
+			for a in ch.asks:
+				if str(a.get("q", "")).strip_edges() == "" or str(a.get("a", "")).strip_edges() == "":
+					_fail(kind, "chat question or reply is empty")
+				if a.get("need", false) and str(a.get("missing", "")).strip_edges() == "":
+					_fail(kind, "needed chat question has no 'missing' text")
+				text += " " + " ".join([a.q, a.a, a.get("missing", "")]).to_lower()
+				if "%s" in a.a or "%d" in a.a:
+					_fail(kind, "unfilled placeholder in chat reply")
+			for m in ch.log:
+				text += " " + str(m.text).to_lower()
 	if t.has("rc"):
 		_check_rc(kind, t)
 		for pc in t.rc.pcs:
@@ -356,8 +371,12 @@ func _check_bitlocker(kind: String, t: Dictionary) -> void:
 	var A = load("res://scripts/accounts.gd")
 	var a: Dictionary = t.acct
 	var goal: Dictionary = a.goal
-	if a.screen.length() != 8 or not a.screen in t.info:
-		_fail(kind, "bitlocker: the screen's key ID isn't in the call notes")
+	var said := false  # Day 19: the caller reads the key ID out on the Messages tab, and asking for it is needed
+	for q in t.get("chat", {}).get("asks", []):
+		if a.screen in q.a and (q.need or goal.hold):
+			said = true
+	if a.screen.length() != 8 or not said:
+		_fail(kind, "bitlocker: the caller can't tell you the screen's key ID on the Messages tab")
 	var matches: Array = []
 	for u in a.users:
 		for d in u.devices:

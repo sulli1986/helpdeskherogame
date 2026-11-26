@@ -7,6 +7,8 @@ extends Control
 ## client's notes (data owners, procedures); tickets with t.wiki need something from it.
 ## Ask a Senior (H, or the button under the answers): each press reveals the next of the step's three
 ## hints (t.hints), and each one revealed takes HINT_COST off what that step pays.
+## Messages tab (C): a chat with the caller on tickets with t.chat, for details the ticket leaves out.
+## Questions the outcome depends on (ask.need) must have been asked when the ticket is closed.
 
 signal shift_ended(stats: Dictionary)
 signal cash_earned(amount: int, resolved: bool)  # resolved: the ticket is closed (not just one step)
@@ -19,6 +21,7 @@ const Remote := preload("res://scripts/remote.gd")
 const Mail := preload("res://scripts/mail.gd")
 const NetMap := preload("res://scripts/netmap.gd")
 const Wiki := preload("res://scripts/wiki.gd")
+const Messages := preload("res://scripts/messages.gd")
 
 const SHIFT_SECONDS := 600.0           # 8:00am to 5:00pm in ten real minutes
 const START_HOUR := 8.0
@@ -39,6 +42,7 @@ const TOOL_ABOUT := {
 	"remote": "Remote Control: connect to one of the client's PCs and work on it. Nothing on this ticket needs it.",
 	"mail": "Mail Console: the client's message trace, quarantine and block list. Nothing on this ticket needs it.",
 	"net": "Network Map: the client's ISP link, firewall, servers, switch and printers. Nothing on this ticket needs it.",
+	"msgs": "Messages: chat with the caller. Everything they've told us is already on the Ticket tab, so there's nothing to ask on this ticket.",
 }
 ## Commands offered as tap-to-run buttons under the prompt on touchscreens.
 const TERM_CHIPS := ["ipconfig", "ping 192.168.1.1", "ping 1.1.1.1", "nslookup google.com", "tracert 1.1.1.1",
@@ -104,7 +108,7 @@ var _compact := false          # phone portrait: queue and ticket are separate s
 var _view_queue := false       # compact only: showing the queue screen rather than the ticket
 var _back: Button              # compact only: "< Queue (n)" above the ticket
 var _next_btn: Button          # under the result: next ticket / next step
-var _tabs: HFlowContainer      # Toolbox tabs: Ticket, Accounts, Remote Control, Mail Console (wrap on phones)
+var _tabs: HFlowContainer      # Toolbox tabs: Ticket, Messages, Accounts, Remote Control, Mail Console... (wrap on phones)
 var _tab_btns := {}            # tab name -> Button
 var _tab := "ticket"           # the tab on show; each ticket remembers its own in t.tab
 var _tool_scroll: ScrollContainer  # holds the tool tabs' content
@@ -114,6 +118,7 @@ var _mail: Node                # scripts/mail.gd, the Mail Console tab
 var _net: Node                 # scripts/netmap.gd, the Network Map tab
 var _wiki: Node                # scripts/wiki.gd, the Client Wiki tab (read-only, every ticket)
 var _wiki_ticket := -1         # the ticket the wiki was last opened for
+var _msgs: Node                # scripts/messages.gd, the Messages tab (tickets with t.chat)
 var _tool_empty: Label         # a tool tab on a ticket that doesn't need it
 var _senior_btn: Button        # Ask a Senior, under the answers
 var _senior_box: PanelContainer
@@ -214,6 +219,8 @@ func answer(i: int) -> void:
 			problems = NetMap.check(current.net, held)
 		else:
 			problems = Mail.check(current.mail, held)
+		if current.has("chat") and (problems.is_empty() or not held):  # questions the outcome depended on (Messages tab)
+			problems = problems + Messages.check(current.chat)
 		if not problems.is_empty():
 			current.explain = "%s.\n%s" % [".\n".join(problems), current.explain]
 		current.acct_ok = problems.is_empty()
@@ -291,6 +298,8 @@ func show_tab(name: String) -> void:
 	var tool: String = "" if current.is_empty() or not _uses_tool(current) else _tool_for(current)
 	_tab_btns.ticket.text = "Ticket #%d" % current.id if not current.is_empty() else "Ticket"
 	var need_wiki: bool = current.get("wiki", false)
+	var chat: bool = current.has("chat")
+	_tab_btns.msgs.text = ("Messages  ●" if chat and name != "msgs" else "Messages") + ("" if _touch else "  (C)")
 	_tab_btns.wiki.text = ("Client Wiki  ●" if need_wiki and name != "wiki" else "Client Wiki") + ("" if _touch else "  (W)")
 	for k in [["accounts", "Accounts"], ["remote", "Remote Control"], ["mail", "Mail Console"], ["net", "Network Map"]]:
 		_tab_btns[k[0]].text = ("%s  ●" % k[1] if tool == k[0] and name != k[0] else k[1]) + ("  (T)" if tool == k[0] and not _touch else "")
@@ -299,8 +308,9 @@ func show_tab(name: String) -> void:
 	_mail.visible = name == "mail" and tool == "mail"
 	_net.visible = name == "net" and tool == "net"
 	_wiki.visible = name == "wiki" and not current.is_empty()
-	var on_tool: bool = tool == name or (name == "wiki" and need_wiki)  # a tab this ticket is worked in
-	_tool_empty.visible = name != "ticket" and name != "wiki" and tool != name
+	_msgs.visible = name == "msgs" and chat
+	var on_tool: bool = tool == name or (name == "wiki" and need_wiki) or (name == "msgs" and chat)  # a tab this ticket is worked in
+	_tool_empty.visible = name != "ticket" and name != "wiki" and tool != name and not (name == "msgs" and chat)
 	_tool_empty.text = TOOL_ABOUT.get(name, "")
 	_tool_hint.visible = name != "ticket" and on_tool and not _answered and current.get("hints_used", 0) > 0
 	if _tool_hint.visible:
@@ -308,6 +318,9 @@ func show_tab(name: String) -> void:
 	if _wiki.visible and _wiki_ticket != current.id:  # each ticket opens on its own client's page
 		_wiki_ticket = current.id
 		_wiki.open(current.client)
+	if _msgs.visible:
+		_msgs.touch = _touch
+		_msgs.open(current.chat, current.client, not _answered)
 	if _accounts.visible:
 		_accounts.touch = _touch
 		_accounts.open(current.acct, current.client, not _answered)
@@ -415,6 +428,8 @@ func _unhandled_input(event: InputEvent) -> void:
 		ask_senior()
 	elif k == KEY_W:
 		show_tab("ticket" if _tab == "wiki" else "wiki")
+	elif k == KEY_C:
+		show_tab("ticket" if _tab == "msgs" else "msgs")
 	elif k == KEY_TAB or k == KEY_DOWN:
 		select_offset(1)
 	elif k == KEY_UP:
@@ -834,7 +849,7 @@ func _build() -> void:
 	_tabs.add_theme_constant_override("h_separation", 6)
 	_tabs.add_theme_constant_override("v_separation", 6)
 	dcol.add_child(_tabs)
-	for k in ["ticket", "accounts", "remote", "mail", "net", "wiki"]:
+	for k in ["ticket", "msgs", "accounts", "remote", "mail", "net", "wiki"]:
 		var tb := Button.new()
 		tb.focus_mode = Control.FOCUS_NONE
 		tb.custom_minimum_size = Vector2(0, 44 if DisplayServer.is_touchscreen_available() else 34)
@@ -870,6 +885,11 @@ func _build() -> void:
 	_wiki.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_wiki.visible = false
 	tcol.add_child(_wiki)
+	_msgs = Messages.new()
+	_msgs.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_msgs.visible = false
+	_msgs.changed.connect(func() -> void: _sfx("type"))
+	tcol.add_child(_msgs)
 	_tool_empty = UI.wrap(UI.label(tcol, "", 15, UI.MUTED))
 	var dscroll := ScrollContainer.new()
 	dscroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED

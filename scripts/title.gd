@@ -93,7 +93,7 @@ func _ready() -> void:
 	_status = UI.wrap(UI.label(box, "", 14, Color(1, 0.7, 0.6)))
 	_status.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 
-	var how := UI.wrap(UI.label(box, "How to play: open a ticket, read the evidence, pick the fix (tap it, or keys 1-4). Tools open in their own tabs beside the ticket: fix lockouts, access requests and MFA attacks on the Accounts tab, driver problems on the Remote Control tab, reported emails on the Mail Console tab, and printers and internet outages on the Network Map tab (T), then press Done (or Fixed) on the Ticket tab. The Client Wiki tab (W) has each client's notes, like who can approve access to their files. Stuck? Ask a Senior (H) for a hint, at a quarter of the pay each. Right answers pay more the faster you are. Wrong calls and SLA breaches cost reputation. M toggles sound.", 13, UI.MUTED))
+	var how := UI.wrap(UI.label(box, "How to play: open a ticket, read the evidence, pick the fix (tap it, or keys 1-4). Tools open in their own tabs beside the ticket: fix lockouts, access requests and MFA attacks on the Accounts tab, driver problems on the Remote Control tab, reported emails on the Mail Console tab, and printers and internet outages on the Network Map tab (T), then press Done (or Fixed) on the Ticket tab. The Messages tab (C) is where you ask the caller for details the ticket leaves out. The Client Wiki tab (W) has each client's notes, like who can approve access to their files. Stuck? Ask a Senior (H) for a hint, at a quarter of the pay each. Right answers pay more the faster you are. Wrong calls and SLA breaches cost reputation. M toggles sound.", 13, UI.MUTED))
 	how.custom_minimum_size = Vector2(340, 0)
 
 	# Leaderboard

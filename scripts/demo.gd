@@ -9,7 +9,7 @@ const END_AT := 27.0
 const READ_TIME := 2.4      # seconds "reading" a ticket before answering
 const RESULT_TIME := 1.8    # seconds showing the explanation
 const WRONG_AT := 17.0      # one deliberate wrong call after the feature (shows the penalty)
-const SEED := 36            # Day 18: Clearwater Dental: Marketing access approved by the data's deputy on the Client Wiki
+const SEED := 36            # Day 18/19: Clearwater Dental: Marketing access approved by the data's deputy on the Client Wiki
 
 var main: Node
 var desk: Node
@@ -54,7 +54,7 @@ func _start_shift() -> void:
 	main.summary.visible = false
 	desk.spawn_scale = 4.0
 	desk.clock_scale = 8.0   # the clock visibly moves, but the shift doesn't end in the clip
-	desk.first_kind = "share"  # Day 18: Client Wiki: check who can approve, then grant it in Accounts
+	desk.first_kind = "share"  # Day 19: Messages: ask whether they need to edit, then the wiki, then Accounts
 	desk.start(SEED)
 	_auto = true
 	_step_t = 2.8  # the hook line plays over the first ticket
@@ -140,6 +140,12 @@ func _plan_accounts(t: Dictionary) -> void:
 	var acc: Node = desk._accounts
 	var goal: Dictionary = t.acct.goal
 	_plan = []
+	if t.has("chat"):  # Day 19: ask the caller what the ticket leaves out, and wait for the reply
+		var msgs: Node = desk._msgs
+		_plan.append_array([
+			[desk.show_tab.bind("msgs"), 1.2],
+			[msgs.ask.bind(0), _messages_wait()],
+		])
 	if t.get("wiki", false):  # Day 18: who owns this data? The Client Wiki's data owners table
 		var wiki: Node = desk._wiki
 		_plan.append_array([
@@ -294,6 +300,11 @@ func _plan_office(t: Dictionary) -> void:
 		_plan.append([nm.act.bind(f, dev), 0.1])
 		_plan.append([_scroll_to_end if key != "dns1" else func() -> void: _scroll_to(nm.focus), 1.6])
 	_plan.append([desk.answer.bind(1 if goal.hold else 0), RESULT_TIME + 1.0])
+
+
+## Day 19: seconds to watch a question on the Messages tab: the caller's typing, then time to read the reply.
+func _messages_wait() -> float:
+	return preload("res://scripts/messages.gd").REPLY_DELAY + 2.4
 
 
 ## Day 17: reveal the next hint and scroll the ticket so the senior's notes are on screen.

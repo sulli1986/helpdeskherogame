@@ -307,7 +307,8 @@ func _make_share(c: Dictionary) -> Dictionary:
 				break
 	var approved := who in ["owner", "deputy"]
 	var right := "GG_%s_%s" % [dept, "Modify" if edit else "Read"]
-	var acct := _directory(c, _pick(["Office Manager", "Accounts", "Reception", "Project Lead", "Designer"]), dept)
+	var job: String = _pick(["Office Manager", "Accounts", "Reception", "Project Lead", "Designer"])
+	var acct := _directory(c, job, dept)
 	acct.orig = acct.users.duplicate(true)
 	var hold_why := "nobody approved it, and only the %s data's owner (%s) or deputy (%s) can" % [dept, own.owner, own.deputy]
 	if who == "other":
@@ -329,11 +330,12 @@ func _make_share(c: Dictionary) -> Dictionary:
 		"other": meaning = "%s is on the Client Wiki, but as the owner of the %s data, not %s. That approval doesn't count here." % [approver, other_dept, dept]
 		"lead": meaning = "%s isn't the %s data's owner or deputy on the Client Wiki. A team leader can't approve access to data they don't own." % [approver, dept]
 		"none": meaning = "There's no approval at all. \"My manager's fine with it\" from the requester isn't approval from the %s data's owner." % dept
-	meaning += " Read & execute is enough to view files; editing them needs Modify."
+	if approved:
+		meaning += " Ask %s on the Messages tab what they need: editing the files needs Modify, viewing them only needs Read & execute." % c.first
 	var explain := ""
 	if approved:
-		explain = "%s is the %s data's %s on the Client Wiki, so it's approved. Least privilege: add %s to %s and nothing more. They sign out and back in for the new group to apply." % [
-			approver, dept, who, c.first, right]
+		explain = "%s is the %s data's %s on the Client Wiki, so it's approved. %s said they need to %s the files, and the request didn't say, so asking was the only way to know. Least privilege: add %s to %s and nothing more. They sign out and back in for the new group to apply." % [
+			approver, dept, who, c.first, "edit" if edit else "only view", c.first, right]
 	else:
 		var why := "Nobody has approved it"
 		if who == "other":
@@ -342,24 +344,44 @@ func _make_share(c: Dictionary) -> Dictionary:
 			why = "%s is a team leader, not the %s data's owner or deputy" % [approver, dept]
 		explain = "%s. Only the data's owner or their deputy can approve access to it (Client Wiki), so change nothing and ask %s or %s to approve it in the PSA." % [
 			why, own.owner, own.deputy]
+	var said: String = _pick(["I need to update the %s spreadsheets every week now, so I'll be editing them." % dept,
+		"Edit, please: I'm taking over some of the %s paperwork and need to save changes." % dept] if edit
+		else ["Just to read them. I need to look up a few old %s reports, I won't change anything." % dept,
+		"Only to view them: I'm checking some %s figures for a report. No changes." % dept])
+	var who_said := "I asked %s, and they've approved it in the ticket." % approver
+	if who == "lead":
+		who_said = "%s, my team leader. They've approved it in the ticket." % approver
+	elif who == "none":
+		who_said = "My manager's fine with it. Does someone else need to approve it?"
+	var chat := {
+		"with": c.user, "about": "Chat with %s (%s), who asked for the access." % [c.user, job],
+		"log": [{"me": false, "text": "Hi, can I please get access to the %s folder? Thanks!" % dept}],
+		"asks": [
+			{"q": "Do you need to change the files, or only open and read them?", "a": said, "need": approved,
+				"missing": "You never asked %s whether they need to edit the files or only view them, so the access level was a guess" % c.first},
+			{"q": "Who approved this?", "a": who_said, "need": false},
+			{"q": "Which folder is it, exactly?", "a": "\\\\FS01\\%s, the %s share." % [dept, dept], "need": false},
+		],
+	}
 	return {
 		"priority": 3,
 		"subject": "Need access to the %s share" % dept,
-		"body": "%s needs to %s files in \\\\FS01\\%s." % [c.user, "edit" if edit else "view", dept],
+		"body": "%s asked in chat: \"Can I please get access to the %s folder?\" It doesn't say whether they need to view the files or edit them." % [c.user, dept],
+		"chat": chat,
 		"info_title": "Request",
-		"info": "Share:     \\\\FS01\\%s\nNTFS:      GG_%s_Read (Read & execute), GG_%s_Modify (Modify)\nAsked for: %s access for %s\n%s\nPolicy:    the data's owner or deputy approves (Client Wiki)" % [dept, dept, dept, "edit" if edit else "read-only", c.user, approval_line],
+		"info": "Share:     \\\\FS01\\%s\nNTFS:      GG_%s_Read (Read & execute), GG_%s_Modify (Modify)\nAsked for: access for %s (view or edit? ask them: Messages tab)\n%s\nPolicy:    the data's owner or deputy approves (Client Wiki)" % [dept, dept, dept, c.user, approval_line],
 		"acct": acct,
 		"wiki": true,
-		"question": "Check the Client Wiki (W), then grant it in Accounts (T) or hold",
+		"question": "Check the Client Wiki (W), ask what they need (C), then grant it in Accounts (T) or hold",
 		"options": [
 			"Done: I've granted it in Accounts",
 			"Hold: change nothing, get the %s data owner's approval first" % dept,
 		],
 		"answer": 1 if acct.goal.hold else 0,
 		"hints": [
-			"Open the Client Wiki tab and find who owns the %s data and who their deputy is. Then compare with who approved this request, and note whether %s needs to view files or edit them." % [dept, c.first],
+			"Open the Client Wiki tab and find who owns the %s data and who their deputy is, then compare with who approved this request. On the Messages tab, ask %s whether they need to view the files or edit them." % [dept, c.first],
 			meaning,
-			("Open %s in Accounts (not their namesake), tick %s and nothing else, then press Done." % [c.user, right] if approved
+			("On the Messages tab (C), ask %s whether they need to change the files: they need to %s them. Then open %s in Accounts (not their namesake), tick %s and nothing else, and press Done." % [c.first, "edit" if edit else "only view", c.user, right] if approved
 				else "Change nothing in Accounts and press Hold: %s or %s has to approve it in the PSA first." % [own.owner, own.deputy]),
 		],
 		"explain": explain,
@@ -1095,23 +1117,40 @@ func _make_bitlocker(c: Dictionary) -> Dictionary:
 		explain = "The caller is verified, but %s has %s. Without the key whose ID matches %s, no key can unlock that drive: read out nothing and hold. First try undoing what triggered it (unplug the new dock, put back any changed BIOS setting) in case the TPM unlocks it again, and check anywhere else the key may have been saved; if none of that works, the laptop has to be wiped and rebuilt, and anything not synced to OneDrive is lost." % [
 			lap.name, "only an old key that has since been replaced, with a different ID" if stale else "no BitLocker key backed up to Entra at all", screen]
 	var hints: Array = [
-		"Verify the caller first: compare %s's mobile on file in Accounts with the number we called back. Then open their devices and look for a key whose ID starts %s, the one on their screen." % [c.user, screen],
+		"Verify the caller first: compare %s's mobile on file in Accounts with the number we called back. Then ask them on the Messages tab for the key ID on their screen, and look in their devices for a key whose ID starts with it." % c.user,
 		("The mobile on file ends %s, but we called back %s, a number the caller gave us. They aren't verified." % [on_file, rang] if not genuine
 			else ("They're verified. Only one key, on %s, has an ID starting %s: check all eight characters, not just the first four." % [lap.name, screen] if has_key
 			else "They're verified, but none of the keys in Entra has an ID starting %s." % screen)),
 		("Read out nothing: press Hold, call back on the number on file and flag it to security." if not genuine
-			else ("Show the key on %s with ID %s, read it out to the caller, then press Done." % [lap.name, key_id.substr(0, 8)] if has_key
-			else "Read out nothing and press Hold: no other key can unlock that drive.")),
+			else ("Ask them on the Messages tab (C) to read you the key ID, then show the key on %s with ID %s, read it out to the caller, and press Done." % [lap.name, key_id.substr(0, 8)] if has_key
+			else "Ask them on the Messages tab (C) to read you the key ID, then read out nothing and press Hold: no key in Entra can unlock that drive.")),
 	]
-	var cause: String = _pick(["after an update last night", "after a BIOS update last night", "since I plugged it into the new docking station"])
+	var causes := ["after an update last night", "after a BIOS update last night", "since I plugged it into the new docking station"]
+	var ci: int = rng.randi() % causes.size()
+	var cause: String = causes[ci]
+	var chat := {
+		"with": c.user, "about": "On the phone with %s (what's said on the call is logged here)." % c.user,
+		"log": [{"me": false, "text": "It's a blue screen that says BitLocker recovery and wants a 48-digit key. I can't get into Windows at all!"}],
+		"asks": [
+			{"q": "Can you read me the recovery key ID on that screen?", "a": "OK... it says \"Recovery key ID\", then %s." % screen,
+				"need": genuine,
+				"missing": "You never asked %s for the key ID on their screen, so you couldn't know which key (if any) unlocks it" % c.first},
+			{"q": "What happened just before it started asking for the key?", "a": [
+				"Windows installed an update last night and restarted. This morning it went straight to this screen.",
+				"A BIOS update ran when I shut down last night. Now it's this screen every time I turn it on.",
+				"I plugged it into the new docking station this morning and it restarted onto this screen."][ci], "need": false},
+			{"q": "Is the laptop plugged into anything right now?", "a": "Yes, the new docking station." if ci == 2 else "Only the charger.", "need": false},
+		],
+	}
 	return {
 		"priority": 1 if exec else 2,
 		"subject": "Laptop asking for a BitLocker recovery key",
 		"body": "%s (%s) is on the phone: \"My laptop's on a blue screen asking for a BitLocker recovery key %s. I can't get into Windows at all!\"" % [c.user, title, cause],
 		"info_title": "Call notes",
-		"info": "Caller:     says they're %s (%s)\nCallback:   we rang the mobile ending %s that the caller gave us;\n            they answered and confirmed the request\nScreen:     BitLocker recovery, key ID starting %s\nPolicy:     only read out a recovery key once the caller is verified\n            (callback number = the mobile on file, Accounts tab)" % [c.user, title, rang, screen],
+		"info": "Caller:     says they're %s (%s)\nCallback:   we rang the mobile ending %s that the caller gave us;\n            they answered and confirmed the request\nScreen:     BitLocker recovery (ask for the key ID: Messages tab)\nPolicy:     only read out a recovery key once the caller is verified\n            (callback number = the mobile on file, Accounts tab)" % [c.user, title, rang],
 		"acct": acct,
-		"question": "Find their key on the Accounts tab (T) and read it out, or hold",
+		"chat": chat,
+		"question": "Ask for the key ID on their screen (C), find the key in Accounts (T) and read it out, or hold",
 		"options": [
 			"Done: I read them the key that matches their screen",
 			"Hold: read out nothing. Not verified, or no key matches",

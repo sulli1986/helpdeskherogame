@@ -1,5 +1,10 @@
 # Changelog
 
+## Day 19 — 2026-11-27
+- Ask the caller: a new Messages tab (C) where you chat with the person on the ticket to get the details it leaves out. Their reply arrives a moment later
+- Access requests no longer say whether they need to view the files or edit them. Ask them on the Messages tab, then grant Read or Modify to match
+- BitLocker callers now read you the key ID on their screen when you ask for it on the Messages tab. Guess instead of asking and the ticket escalates, even if you guessed right
+
 ## Day 18 — 2026-11-26
 - Who can say yes? Check the Client Wiki: a new tab (W) with every client's own page, showing who owns each department's files and their deputy, plus the client's procedures and servers
 - Access requests now need the right approver. Check the wiki: grant it in Accounts only when the data's owner or deputy approved it

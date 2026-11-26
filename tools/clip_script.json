@@ -1,20 +1,20 @@
 {
- "day": 18,
+ "day": 19,
  "lines": [
   {
-   "text": "Who's allowed to approve that access? Check the new Client Wiki."
+   "text": "Tickets don't always tell you everything. Now you can ask."
   },
   {
-   "text": "Every client has a page: who owns each department's files, and their deputy.",
-   "at": 3.5
+   "text": "Open the new Messages tab and ask the caller what you need to know.",
+   "at": 3.0
   },
   {
-   "text": "The deputy approved this one, so grant it in Accounts. Read or modify, nothing more.",
+   "text": "They need to edit the files, so after the wiki check, it's modify access.",
    "at": 8.5
   },
   {
-   "text": "But if a team leader signs off, hold it until the right person approves.",
-   "at": 15.0
+   "text": "Guess instead of asking, and the ticket escalates.",
+   "at": 16.0
   }
  ]
 }
