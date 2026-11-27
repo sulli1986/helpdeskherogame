@@ -1,5 +1,10 @@
 # Changelog
 
+## Day 20 — 2026-11-28
+- Set up laptops yourself: a new Imaging Bench tab (T) for new-starter and replacement laptop tickets. Pick the one laptop on the bench that's fit to go out
+- Check the client's laptop standard on the Client Wiki: Windows 11 Pro, enough RAM for the user's department, and the staff Autopilot group tag. Skip Home editions, reserved laptops, ones HR asked us to keep, and any that fail diagnostics
+- Run diagnostics, register it in Autopilot with the right tag (or fix the supplier's), assign it to the user (not their namesake), then wipe and reset it. Every reset counts, and nothing fit to go out means order one and hold
+
 ## Day 19 — 2026-11-27
 - Ask the caller: a new Messages tab (C) where you chat with the person on the ticket to get the details it leaves out. Their reply arrives a moment later
 - Access requests no longer say whether they need to view the files or edit them. Ask them on the Messages tab, then grant Read or Modify to match

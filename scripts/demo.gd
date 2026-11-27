@@ -9,7 +9,7 @@ const END_AT := 27.0
 const READ_TIME := 2.4      # seconds "reading" a ticket before answering
 const RESULT_TIME := 1.8    # seconds showing the explanation
 const WRONG_AT := 17.0      # one deliberate wrong call after the feature (shows the penalty)
-const SEED := 36            # Day 18/19: Clearwater Dental: Marketing access approved by the data's deputy on the Client Wiki
+const SEED := 1             # Day 20: Ironbridge Freight: a Finance laptop (32 GB) the supplier tagged as a shared PC
 
 var main: Node
 var desk: Node
@@ -54,7 +54,7 @@ func _start_shift() -> void:
 	main.summary.visible = false
 	desk.spawn_scale = 4.0
 	desk.clock_scale = 8.0   # the clock visibly moves, but the shift doesn't end in the clip
-	desk.first_kind = "share"  # Day 19: Messages: ask whether they need to edit, then the wiki, then Accounts
+	desk.first_kind = "laptop"  # Day 20: Imaging Bench: the wiki's laptop standard, then set one up with Autopilot
 	desk.start(SEED)
 	_auto = true
 	_step_t = 2.8  # the hook line plays over the first ticket
@@ -114,6 +114,10 @@ func _process(delta: float) -> void:
 	elif desk.current.has("rc") and not desk.current.get("demo_planned", false):
 		desk.current.demo_planned = true
 		_plan_remote(desk.current)
+		_step_t = 0.2
+	elif desk.current.has("bench") and not desk.current.get("demo_planned", false):
+		desk.current.demo_planned = true
+		_plan_bench(desk.current)
 		_step_t = 0.2
 	elif desk.current.has("mail") and not desk.current.get("demo_planned", false):
 		desk.current.demo_planned = true
@@ -217,6 +221,34 @@ func _plan_remote(t: Dictionary) -> void:
 		_plan.append([rem.open_app.bind("devmgr"), 0.1])
 		_plan.append([_scroll_to_end, 1.6])
 	_plan.append([desk.answer.bind(1 if goal.hold else 0), RESULT_TIME + 1.0])
+
+
+## Day 20: Imaging Bench: read the wiki's laptop standard, pick the laptop that's fit to go out, run
+## its diagnostics, fix its Autopilot group tag, assign it to the user, reset it, and close it as Done.
+func _plan_bench(t: Dictionary) -> void:
+	var bn: Node = desk._bench
+	var wiki: Node = desk._wiki
+	var goal: Dictionary = t.bench.goal
+	_plan = [
+		[desk.show_tab.bind("wiki"), 0.1],
+		[func() -> void: _scroll_to(wiki.laptop_head if wiki.laptop_head else wiki), 3.0],  # Finance staff need 32 GB
+		[desk.show_tab.bind("bench"), 0.1],
+		[_scroll_to.bind(bn), 1.8],                       # the bench: four laptops
+	]
+	if goal.hold:
+		_plan.append([desk.answer.bind(1), RESULT_TIME + 1.0])
+		return
+	_plan.append_array([
+		[bn.select.bind(goal.asset), 0.1],
+		[func() -> void: _scroll_to(bn.detail if bn.detail else bn), 2.4],  # Pro, 32 GB... tagged as a shared PC
+		[bn.diagnose, 0.1],
+		[func() -> void: _scroll_to(bn.actions if bn.actions else bn), 1.4],
+		[bn.set_tag.bind(goal.tag), 1.4],
+		[bn.assign.bind(goal.user), 1.2],
+		[bn.reset, 0.1],
+		[_scroll_to_end, 2.0],                            # joined, enrolled, greets the user
+		[desk.answer.bind(0), RESULT_TIME + 1.0],
+	])
 
 
 ## Day 12: Mail Console: find the reported email in the message trace, read its headers, then

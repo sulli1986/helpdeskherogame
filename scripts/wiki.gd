@@ -1,7 +1,7 @@
 extends VBoxContainer
 ## Toolbox › Client Wiki: the MSP's notes on each client, the same page every time for that client
 ## (tickets.gd wiki_page()). Read-only: who owns each department's data and their deputy (the only
-## people who can approve access to it), the client's procedures, servers and key contacts.
+## people who can approve access to it), the client's procedures, laptop standard, servers and key contacts.
 ## Opens on the current ticket's client; the client buttons at the top open any other page.
 
 const UI := preload("res://scripts/ui.gd")
@@ -9,6 +9,7 @@ const Tickets := preload("res://scripts/tickets.gd")
 
 var client := ""          # the page on show
 var owners_head: Label    # the data owners table's heading (the demo scrolls to it)
+var laptop_head: Label    # the laptop standard's heading (the demo scrolls to it)
 var _title: Label
 var _clients: HFlowContainer
 var _body: VBoxContainer
@@ -72,6 +73,18 @@ func show_client(name: String) -> void:
 	var proc := _section("Procedures")
 	for line in p.procedures:
 		UI.wrap(UI.label(proc, "•  " + line, 14, UI.TEXT))
+
+	var lap: Dictionary = p.laptops
+	var std := _section("Laptop standard: new and replacement laptops")
+	laptop_head = std.get_child(0)
+	for line in [
+		"Windows 11 Pro (Home can't join Entra ID) and at least %d GB of RAM. %s staff need %d GB: %s." % [lap.ram, lap.heavy, lap.heavy_ram, lap.heavy_why],
+		"Run the bench diagnostics before any laptop goes out.",
+		"Autopilot group tag for staff laptops: %s. %s is only for the shared front-desk PCs (self-deploying, no user)." % [lap.tag, lap.shared_tag],
+		"Assign the laptop to its user in Autopilot, then wipe and reset it so Autopilot sets it up.",
+		"Never use a laptop reserved for someone else, and never wipe one HR has asked us to keep. Nothing fit to go out? Order one and hold.",
+	]:
+		UI.wrap(UI.label(std, "•  " + line, 14, UI.TEXT))
 
 	var srv := _section("Servers")
 	for line in p.servers:

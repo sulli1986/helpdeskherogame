@@ -13,7 +13,7 @@ extends RefCounted
 ## New ticket types: add a _make_<kind>() and list it in KINDS. Keep answers technically right;
 ## the players are often real IT people.
 
-const KINDS := ["phish", "lockout", "share", "printer", "network", "licence", "mfa", "driver", "bitlocker"]
+const KINDS := ["phish", "lockout", "share", "printer", "network", "licence", "mfa", "driver", "bitlocker", "laptop"]
 
 const CLIENTS := [
 	["Greenfield Wines", "greenfieldwines.com"],
@@ -52,7 +52,7 @@ func make(kind := "") -> Dictionary:
 	t["kind"] = kind
 	t["client"] = ctx.client
 	t["user"] = ctx.user
-	if not t.has("acct") and not t.has("rc") and not t.has("mail") and not t.has("net"):  # Toolbox tickets keep "Done" / "Hold" in that order
+	if not t.has("acct") and not t.has("rc") and not t.has("mail") and not t.has("net") and not t.has("bench"):  # Toolbox tickets keep "Done" / "Hold" in that order
 		_shuffle_options(t)
 	for st in t.get("steps", []):
 		if st.has("options") and not st.has("net"):  # console and Toolbox steps keep their order
@@ -397,6 +397,9 @@ const WIKI_ABOUT := {
 	"Oakline Architects": "Architecture studio working on big CAD and image files", "Summit Physio": "Physiotherapy clinic with a reception desk and treatment rooms",
 	"Bluepeak Logistics": "Warehouse and logistics office", "Riverbend Realty": "Real estate agency: sales and property management",
 }
+const HEAVY_DEPTS := ["Projects", "Marketing", "Finance"]
+const HEAVY_WHY := {"Projects": "they run 3D design and CAD software", "Marketing": "they edit video",
+	"Finance": "they work in very large spreadsheets and reporting models"}
 const OWNER_TITLES := {"Finance": ["Finance Manager", "Senior Accountant"], "HR": ["HR Manager", "HR Advisor"],
 	"Projects": ["Projects Manager", "Senior Project Lead"], "Marketing": ["Marketing Manager", "Marketing Coordinator"]}
 
@@ -422,10 +425,16 @@ static func wiki_page(client: String) -> Dictionary:
 		var d: String = DEPTS[i]
 		owners[d] = {"owner": people[1 + i * 2], "owner_title": OWNER_TITLES[d][0],
 			"deputy": people[2 + i * 2], "deputy_title": OWNER_TITLES[d][1]}
+	var hours := "%d:%s am to 5:%s pm, Monday to Friday" % [7 + r.randi() % 2, ["00", "30"][r.randi() % 2], ["00", "30"][r.randi() % 2]]
+	# Laptop standard (Imaging Bench tickets): which department needs the bigger RAM, and the Autopilot tags
+	var heavy: String = HEAVY_DEPTS[r.randi() % HEAVY_DEPTS.size()]
+	var prefix := domain.substr(0, 3).to_upper()
+	var laptops := {"heavy": heavy, "heavy_why": HEAVY_WHY[heavy], "ram": 16, "heavy_ram": 32,
+		"tag": "%s-Staff" % prefix, "shared_tag": "%s-Shared" % prefix}
 	return {
 		"client": client, "domain": domain, "about": WIKI_ABOUT.get(client, "Small business"),
-		"hours": "%d:%s am to 5:%s pm, Monday to Friday" % [7 + r.randi() % 2, ["00", "30"][r.randi() % 2], ["00", "30"][r.randi() % 2]],
-		"director": people[0], "owners": owners, "people": people,
+		"hours": hours,
+		"director": people[0], "owners": owners, "people": people, "laptops": laptops,
 		"servers": ["DC01: domain controller and DNS", "FS01: file server (the Finance, HR, Projects and Marketing shares)",
 			"PRINT01: print server", "FW01: firewall and internet link"],
 		"procedures": [
@@ -1252,6 +1261,172 @@ func _make_driver(c: Dictionary) -> Dictionary:
 				m.pid, m.model, ", whatever the caller calls it" if said != m.model else "",
 				"ARM-based processor" if arch == "ARM64" else "x64-based processor", "ARM64" if arch == "ARM64" else "x64"]),
 	}
+
+
+# ---------------------------------------------------------------- laptop (Imaging Bench)
+## Done in Toolbox > Imaging Bench after checking Toolbox > Client Wiki (the laptop standard): pick the
+## one laptop fit to go out (Windows 11 Pro, enough RAM for the user's department, not reserved for
+## someone else, not on HR's keep-unwiped list, passes its battery test), run diagnostics, register
+## it in Autopilot with the staff group tag, assign it to the user (not their namesake), then reset it.
+## If nothing on the bench is fit to go out: reset nothing and hold (order one).
+const LAPTOP_MODELS := [["Tessera 14 G5", "Intel(R) Core(TM) Ultra 5 125U"], ["Tessera 16 G5", "Intel(R) Core(TM) Ultra 7 155H"],
+	["Lumen 13 Air", "AMD Ryzen(TM) 5 PRO 7540U"], ["Lumen 15 Pro", "AMD Ryzen(TM) 7 PRO 7840U"]]
+const LAPTOP_FAULTS := ["home", "ram", "reserved", "hrhold", "battery"]
+const WEEKDAYS := ["Monday", "Tuesday", "Wednesday", "Thursday"]
+
+
+func _make_laptop(c: Dictionary) -> Dictionary:
+	var wiki := wiki_page(c.client)
+	var guard := 0
+	while c.user in wiki.people and guard < 200:  # the user isn't already on the client's wiki page
+		guard += 1
+		c.last = _pick(LAST)
+		c.user = "%s %s" % [c.first, c.last]
+		c.sam = (c.first.substr(0, 1) + c.last).to_lower()
+	var lap: Dictionary = wiki.laptops
+	var dept: String = _pick(DEPTS)
+	var need: int = lap.heavy_ram if dept == lap.heavy else lap.ram
+	var hold := rng.randf() < 0.2
+	var starter := rng.randf() < 0.6  # a new starter, or a replacement for a broken laptop
+	# The people the bench can assign to: the user, a namesake, two others. Leavers and the other starter aren't staff yet / any more.
+	var namesake := "%s %s" % [c.first, _pick(LAST.filter(func(l: String) -> bool: return l != c.last and not "%s %s" % [c.first, l] in wiki.people))]
+	var people: Array = [c.user, namesake]
+	while people.size() < 4:
+		var n := "%s %s" % [_pick(FIRST), _pick(LAST)]
+		if not n in people and not n.begins_with(c.first + " ") and not n in wiki.people:
+			people.append(n)
+	var outsiders: Array = []  # leavers and another starter: nobody on the list above or the wiki
+	while outsiders.size() < 3:
+		var n := "%s %s" % [_pick(FIRST), _pick(LAST)]
+		if not n in people and not n in outsiders and not n.begins_with(c.first + " ") and not n in wiki.people:
+			outsiders.append(n)
+	var faults: Array = LAPTOP_FAULTS.duplicate()
+	_shuffle(faults)
+	faults = faults.slice(0, 4 if hold else 3)
+	if not hold:
+		faults.append("")
+	_shuffle(faults)
+	var nums: Array = range(1001, 1099)
+	var laptops: Array = []
+	var good := ""
+	var bad_battery := ""
+	for f in faults:
+		var m: Array = _pick(LAPTOP_MODELS)
+		var lt := {
+			"asset": "LT-%04d" % nums.pop_at(rng.randi() % nums.size()), "model": m[0], "cpu": m[1],
+			"ram": need if rng.randf() < 0.7 else 32, "disk": _pick(["256 GB SSD", "512 GB SSD", "512 GB SSD", "1 TB SSD"]),
+			"edition": "Windows 11 Pro", "state": "New, in box", "notes": "", "fault": f,
+			"battery": rng.randi_range(91, 100), "diag": false, "ap": {"registered": false, "tag": ""}, "user": "", "resets": [],
+		}
+		var returned := rng.randf() < 0.4
+		match f:
+			"home":
+				lt.edition = "Windows 11 Home"
+				lt.notes = "Bought from a retail store when the usual supplier was out of stock. No Pro upgrade licence for it."
+				returned = false
+			"ram":
+				lt.ram = 16 if need == 32 else 8
+			"reserved":
+				lt.for_who = namesake if rng.randf() < 0.5 else outsiders[2]
+				lt.notes = "Reserved for %s, who starts %s. Don't give it to anyone else." % [lt.for_who, _pick(WEEKDAYS)]
+				returned = false
+			"hrhold":
+				returned = true
+			"battery":
+				lt.battery = rng.randi_range(38, 58)
+				bad_battery = lt.asset
+		if returned:
+			var leaver: String = outsiders[0] if f == "hrhold" else outsiders[1]
+			lt.state = "Returned by %s (left)" % leaver
+			lt.ap = {"registered": true, "tag": lap.tag}
+			lt.user = leaver
+			lt.battery = mini(lt.battery, rng.randi_range(84, 93)) if f != "battery" else lt.battery
+			if f == "hrhold":
+				lt.notes = "HR: keep this laptop exactly as it is. Don't wipe or reuse it until HR says so."
+			elif lt.notes == "":
+				lt.notes = "Their files were handed over. OK to reuse."
+		elif f == "" or f == "ram" or f == "battery":  # new ones: did the supplier register it, and how?
+			var how: String = _pick(["none", "notag", "shared"]) if f == "" else _pick(["none", "notag"])
+			if how != "none":
+				lt.ap = {"registered": true, "tag": lap.shared_tag if how == "shared" else ""}
+				lt.notes = "The supplier registered it in Autopilot for us."
+		if f == "":
+			good = lt.asset
+		laptops.append(lt)
+	var bench := {
+		"laptops": laptops, "tags": [lap.tag, lap.shared_tag], "people": people,
+		"goal": {"hold": hold, "asset": good, "tag": lap.tag, "user": c.user, "need_ram": need, "dept": dept,
+			"hold_why": "nothing on the bench is fit to go out, so order one to the standard and hold"},
+	}
+	var g: Dictionary = {}
+	for lt in laptops:
+		if lt.asset == good:
+			g = lt
+	var bad: Array = []  # why each of the others can't go out
+	for lt in laptops:
+		if lt.fault != "":
+			bad.append("%s %s" % [lt.asset, _laptop_why(lt, dept, need)])
+	var steps := ""
+	if not hold:
+		var todo: Array = ["run its diagnostics"]
+		if not g.ap.registered:
+			todo.append("register it in Autopilot with tag %s" % lap.tag)
+		elif g.ap.tag != lap.tag:
+			todo.append("change its group tag from %s to %s" % [g.ap.tag if g.ap.tag != "" else "(none)", lap.tag])
+		todo.append("assign it to %s (not %s)" % [c.user, namesake])
+		todo.append("wipe and reset it")
+		steps = ", ".join(todo.slice(0, todo.size() - 1)) + ", then " + todo.back()
+	var why: String = "The Client Wiki's laptop standard: Windows 11 Pro, %d GB of RAM for %s staff%s." % [need, dept,
+		" (%s)" % lap.heavy_why if need == lap.heavy_ram else ""]
+	var subject := "Laptop for a new starter" if starter else "Replacement laptop"
+	var body: String = ("%s (Managing Director): \"%s starts in %s next week. Can you get a laptop ready for them?\"" % [wiki.director, c.user, dept]
+		if starter else
+		"%s: \"I dropped my laptop and the screen's shattered. The repair shop has it for two weeks. Can I get a replacement?\"" % c.user)
+	var info: String = ("Starter:  %s, %s. Account and licence are ready\nNeeds:    a laptop to %s's standard (Client Wiki)\nBench:    on the Imaging Bench tab (T)" % [c.user, dept, c.client]
+		if starter else
+		"Caller:   %s, %s. Their own laptop is away for repair\nNeeds:    a replacement to %s's standard (Client Wiki)\nBench:    on the Imaging Bench tab (T)" % [c.user, dept, c.client])
+	return {
+		"priority": 3,
+		"subject": subject,
+		"body": body,
+		"info_title": "Request",
+		"info": info,
+		"bench": bench,
+		"wiki": true,
+		"question": "Set a laptop up on the Imaging Bench tab (T), or hold",
+		"options": [
+			"Done: the laptop is set up with Autopilot and ready for %s" % c.first,
+			"Hold: nothing on the bench can go out. Order one to the standard",
+		],
+		"answer": 1 if hold else 0,
+		"hints": [
+			"Open the Client Wiki's laptop standard: how much RAM %s staff need, and the staff group tag. Then check every laptop on the Imaging Bench: its specs, state and bench note, and run diagnostics." % dept,
+			("%s None of them can go out: %s." % [why, "; ".join(bad)] if hold
+				else "%s %s is the one: %s." % [why, good, "; ".join(bad)]),
+			("Reset nothing and press Hold, so a laptop to the standard gets ordered." if hold
+				else "On %s: %s. Then press Done." % [good, steps]),
+		],
+		"explain": ("%s Nothing on the bench meets it: %s. Order a laptop to the standard and hold. Never reset a laptop that isn't fit to go out: a wipe can't be undone." % [why, "; ".join(bad)]
+			if hold else
+			"%s %s is the only fit: %s. On %s: %s. Autopilot then joins it to Entra ID and enrols it in Intune with the staff profile.%s" % [
+				why, good, "; ".join(bad), good, steps,
+				" Diagnostics catch a worn battery the specs don't show." if bad_battery != "" else ""]),
+	}
+
+
+func _laptop_why(lt: Dictionary, dept: String, need: int) -> String:
+	match lt.fault:
+		"home":
+			return "runs Windows 11 Home"
+		"ram":
+			return "has %d GB, and %s staff need %d" % [lt.ram, dept, need]
+		"reserved":
+			return "is reserved for %s" % lt.for_who
+		"hrhold":
+			return "is one HR asked us to keep unwiped"
+		"battery":
+			return "fails its battery test (%d%%)" % lt.battery
+	return ""
 
 
 func _shuffle(a: Array) -> void:

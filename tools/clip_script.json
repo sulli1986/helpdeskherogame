@@ -1,20 +1,20 @@
 {
- "day": 19,
+ "day": 20,
  "lines": [
   {
-   "text": "Tickets don't always tell you everything. Now you can ask."
+   "text": "New today: the Imaging Bench. Set up laptops yourself."
   },
   {
-   "text": "Open the new Messages tab and ask the caller what you need to know.",
+   "text": "The wiki's laptop standard says Finance staff need thirty-two gigs.",
    "at": 3.0
   },
   {
-   "text": "They need to edit the files, so after the wiki check, it's modify access.",
-   "at": 8.5
+   "text": "The supplier tagged this one as a shared PC. Fix the tag, then reset.",
+   "at": 7.5
   },
   {
-   "text": "Guess instead of asking, and the ticket escalates.",
-   "at": 16.0
+   "text": "Get it wrong and the ticket escalates.",
+   "at": 17.0
   }
  ]
 }

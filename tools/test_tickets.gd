@@ -116,6 +116,10 @@ func _check(kind: String, t: Dictionary) -> void:
 		_check_mail(kind, t)
 		for x in t.mail.msgs:
 			text += " " + " ".join([x.from_name, x.from_addr, x.reply_to, x.subject, x.auth, x.links, x.attach, x.note]).to_lower()
+	if t.has("bench"):
+		_check_bench(kind, t)
+		for lt in t.bench.laptops:
+			text += " " + " ".join([lt.asset, lt.model, lt.cpu, lt.state, lt.notes, lt.user]).to_lower()
 	if t.has("net"):
 		_check_net(kind, t)
 		text += " " + " ".join(t.net.changes).to_lower()
@@ -463,6 +467,79 @@ func _check_licence(kind: String, a: Dictionary) -> void:
 					x.licence = goal.licence
 			if A.check(w, false).is_empty():
 				_fail(kind, "taking a colleague's licence wasn't caught")
+
+
+## Toolbox > Imaging Bench tickets: Done / Hold; exactly one laptop is fit to go out (none when it's a
+## hold), and the faults are really there. The right set-up must pass, and resetting any unfit laptop,
+## the wrong tag or user, skipping diagnostics, or never resetting must each be caught.
+func _check_bench(kind: String, t: Dictionary) -> void:
+	var B = load("res://scripts/bench.gd")
+	var T = load("res://scripts/tickets.gd")
+	var b: Dictionary = t.bench
+	var goal: Dictionary = b.goal
+	var lap: Dictionary = T.wiki_page(t.client).laptops
+	if t.options.size() != 2 or t.answer != (1 if goal.hold else 0):
+		_fail(kind, "bench options must be Done / Hold, answer matching goal.hold")
+	if goal.need_ram != (lap.heavy_ram if goal.dept == lap.heavy else lap.ram) or goal.tag != lap.tag or b.tags[0] != lap.tag or b.tags[1] != lap.shared_tag:
+		_fail(kind, "bench: RAM need or tags don't match the Client Wiki")
+	if not t.user in b.people or goal.user != t.user:
+		_fail(kind, "bench: the user isn't on the assign list")
+	var fit: Array = []
+	for lt in b.laptops:
+		var bad := []
+		if lt.edition != "Windows 11 Pro":
+			bad.append("home")
+		if lt.ram < goal.need_ram:
+			bad.append("ram")
+		if "Reserved for" in lt.notes:
+			bad.append("reserved")
+			if lt.for_who == t.user:
+				_fail(kind, "bench: laptop reserved for the user themselves")
+		if "HR" in lt.notes:
+			bad.append("hrhold")
+		if lt.battery < 80:
+			bad.append("battery")
+		if lt.fault == "" and not bad.is_empty() or lt.fault != "" and bad != [lt.fault]:
+			_fail(kind, "bench: %s's fault '%s' doesn't match its specs %s" % [lt.asset, lt.fault, str(bad)])
+		if lt.fault == "":
+			fit.append(lt.asset)
+	if goal.hold != fit.is_empty() or (not goal.hold and (fit.size() != 1 or fit[0] != goal.asset)):
+		_fail(kind, "bench: need exactly one fit laptop (the goal) unless it's a hold")
+	if B.check(b, true).is_empty() != goal.hold or B.check(b, false).is_empty():
+		_fail(kind, "bench: untouched bench judged wrongly")
+	var namesake: String = b.people[1]
+	var right := {"registered": true, "tag": goal.tag, "user": goal.user}
+	for lt_i in b.laptops.size():  # resetting any unfit laptop must be caught
+		if b.laptops[lt_i].asset == goal.asset:
+			continue
+		var c: Dictionary = b.duplicate(true)
+		c.laptops[lt_i].diag = true
+		c.laptops[lt_i].resets.append(right.duplicate())
+		if B.check(c, goal.hold).is_empty() or B.check(c, not goal.hold).is_empty():
+			_fail(kind, "bench: resetting unfit %s wasn't caught" % c.laptops[lt_i].asset)
+	if goal.hold:
+		return
+	var gi := -1
+	for i in b.laptops.size():
+		if b.laptops[i].asset == goal.asset:
+			gi = i
+	var ok: Dictionary = b.duplicate(true)
+	ok.laptops[gi].diag = true
+	ok.laptops[gi].resets.append(right.duplicate())
+	if not B.check(ok, false).is_empty() or B.check(ok, true).is_empty():
+		_fail(kind, "bench: the right set-up doesn't pass: %s" % str(B.check(ok, false)))
+	for wrong in [{"registered": false, "tag": "", "user": ""}, {"registered": true, "tag": "", "user": goal.user},
+			{"registered": true, "tag": lap.shared_tag, "user": goal.user}, {"registered": true, "tag": goal.tag, "user": namesake},
+			{"registered": true, "tag": goal.tag, "user": ""}]:
+		var c: Dictionary = b.duplicate(true)
+		c.laptops[gi].diag = true
+		c.laptops[gi].resets.append(wrong)
+		if B.check(c, false).is_empty():
+			_fail(kind, "bench: wrong reset %s wasn't caught" % str(wrong))
+	var nodiag: Dictionary = b.duplicate(true)
+	nodiag.laptops[gi].resets.append(right.duplicate())
+	if B.check(nodiag, false).is_empty():
+		_fail(kind, "bench: skipping diagnostics wasn't caught")
 
 
 ## Toolbox > Remote Control tickets: Done / Hold; the right install must pass, nothing must fail,

@@ -2,7 +2,7 @@ extends Control
 ## One helpdesk shift. Tickets queue on the left (top in portrait), the open ticket on the right.
 ## Answer with the option buttons or keys 1-4, Enter for the next ticket, Tab / arrows to switch.
 ## Toolbox: each tool is its own tab beside the Ticket tab (like a separate admin app). T switches
-## between the ticket and the tool it needs (Accounts, Remote Control, Mail Console or Network Map). Tickets fixed in a tool are
+## between the ticket and the tool it needs (Accounts, Remote Control, Mail Console, Network Map or Imaging Bench). Tickets fixed in a tool are
 ## closed on the Ticket tab with "Done" / "Hold". The Client Wiki tab (W) is open on every ticket: the
 ## client's notes (data owners, procedures); tickets with t.wiki need something from it.
 ## Ask a Senior (H, or the button under the answers): each press reveals the next of the step's three
@@ -20,6 +20,7 @@ const Accounts := preload("res://scripts/accounts.gd")
 const Remote := preload("res://scripts/remote.gd")
 const Mail := preload("res://scripts/mail.gd")
 const NetMap := preload("res://scripts/netmap.gd")
+const Bench := preload("res://scripts/bench.gd")
 const Wiki := preload("res://scripts/wiki.gd")
 const Messages := preload("res://scripts/messages.gd")
 
@@ -42,6 +43,7 @@ const TOOL_ABOUT := {
 	"remote": "Remote Control: connect to one of the client's PCs and work on it. Nothing on this ticket needs it.",
 	"mail": "Mail Console: the client's message trace, quarantine and block list. Nothing on this ticket needs it.",
 	"net": "Network Map: the client's ISP link, firewall, servers, switch and printers. Nothing on this ticket needs it.",
+	"bench": "Imaging Bench: the laptops on our bench for this client, set up with Autopilot. Nothing on this ticket needs it.",
 	"msgs": "Messages: chat with the caller. Everything they've told us is already on the Ticket tab, so there's nothing to ask on this ticket.",
 }
 ## Commands offered as tap-to-run buttons under the prompt on touchscreens.
@@ -116,6 +118,7 @@ var _accounts: Node            # scripts/accounts.gd, the Accounts tab
 var _remote: Node              # scripts/remote.gd, the Remote Control tab
 var _mail: Node                # scripts/mail.gd, the Mail Console tab
 var _net: Node                 # scripts/netmap.gd, the Network Map tab
+var _bench: Node               # scripts/bench.gd, the Imaging Bench tab
 var _wiki: Node                # scripts/wiki.gd, the Client Wiki tab (read-only, every ticket)
 var _wiki_ticket := -1         # the ticket the wiki was last opened for
 var _msgs: Node                # scripts/messages.gd, the Messages tab (tickets with t.chat)
@@ -217,6 +220,8 @@ func answer(i: int) -> void:
 			problems = Remote.check(current.rc, held)
 		elif current.has("net"):
 			problems = NetMap.check(current.net, held)
+		elif current.has("bench"):
+			problems = Bench.check(current.bench, held)
 		else:
 			problems = Mail.check(current.mail, held)
 		if current.has("chat") and (problems.is_empty() or not held):  # questions the outcome depended on (Messages tab)
@@ -272,12 +277,14 @@ func _update_senior() -> void:
 func _tool_for(t: Dictionary) -> String:
 	if t.has("net"):
 		return "net"
+	if t.has("bench"):
+		return "bench"
 	return "remote" if t.has("rc") else ("mail" if t.has("mail") else "accounts")
 
 
 ## Is this ticket worked in a Toolbox tool and closed with Done / Hold?
 func _uses_tool(t: Dictionary) -> bool:
-	return t.has("acct") or t.has("rc") or t.has("mail") or t.has("net")
+	return t.has("acct") or t.has("rc") or t.has("mail") or t.has("net") or t.has("bench")
 
 
 ## Switch the work area to a tab: the ticket itself, or one of the Toolbox tools.
@@ -301,12 +308,13 @@ func show_tab(name: String) -> void:
 	var chat: bool = current.has("chat")
 	_tab_btns.msgs.text = ("Messages  ●" if chat and name != "msgs" else "Messages") + ("" if _touch else "  (C)")
 	_tab_btns.wiki.text = ("Client Wiki  ●" if need_wiki and name != "wiki" else "Client Wiki") + ("" if _touch else "  (W)")
-	for k in [["accounts", "Accounts"], ["remote", "Remote Control"], ["mail", "Mail Console"], ["net", "Network Map"]]:
+	for k in [["accounts", "Accounts"], ["remote", "Remote Control"], ["mail", "Mail Console"], ["net", "Network Map"], ["bench", "Imaging Bench"]]:
 		_tab_btns[k[0]].text = ("%s  ●" % k[1] if tool == k[0] and name != k[0] else k[1]) + ("  (T)" if tool == k[0] and not _touch else "")
 	_accounts.visible = name == "accounts" and tool == "accounts"
 	_remote.visible = name == "remote" and tool == "remote"
 	_mail.visible = name == "mail" and tool == "mail"
 	_net.visible = name == "net" and tool == "net"
+	_bench.visible = name == "bench" and tool == "bench"
 	_wiki.visible = name == "wiki" and not current.is_empty()
 	_msgs.visible = name == "msgs" and chat
 	var on_tool: bool = tool == name or (name == "wiki" and need_wiki) or (name == "msgs" and chat)  # a tab this ticket is worked in
@@ -333,6 +341,9 @@ func show_tab(name: String) -> void:
 	elif _net.visible:
 		_net.touch = _touch
 		_net.open(current.net, current.client, not _answered)
+	elif _bench.visible:
+		_bench.touch = _touch
+		_bench.open(current.bench, current.client, not _answered)
 
 
 func _resolve(ok: bool, i: int) -> void:
@@ -659,6 +670,7 @@ func _mark_options(chosen: int) -> void:
 		_remote.set_enabled(false)
 		_mail.set_enabled(false)
 		_net.set_enabled(false)
+		_bench.set_enabled(false)
 		if chosen >= 0:
 			for b in btns:
 				b.disabled = true
@@ -849,7 +861,7 @@ func _build() -> void:
 	_tabs.add_theme_constant_override("h_separation", 6)
 	_tabs.add_theme_constant_override("v_separation", 6)
 	dcol.add_child(_tabs)
-	for k in ["ticket", "msgs", "accounts", "remote", "mail", "net", "wiki"]:
+	for k in ["ticket", "msgs", "accounts", "remote", "mail", "net", "bench", "wiki"]:
 		var tb := Button.new()
 		tb.focus_mode = Control.FOCUS_NONE
 		tb.custom_minimum_size = Vector2(0, 44 if DisplayServer.is_touchscreen_available() else 34)
@@ -881,6 +893,10 @@ func _build() -> void:
 	_net.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_net.changed.connect(func() -> void: _sfx("type"))
 	tcol.add_child(_net)
+	_bench = Bench.new()
+	_bench.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_bench.changed.connect(func() -> void: _sfx("type"))
+	tcol.add_child(_bench)
 	_wiki = Wiki.new()
 	_wiki.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_wiki.visible = false
